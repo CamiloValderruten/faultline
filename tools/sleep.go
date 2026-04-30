@@ -33,8 +33,7 @@ func (t *SleepTool) Parameters() string {
 			"seconds": {
 				"type": "integer",
 				"minimum": 1,
-				"maximum": 300,
-				"description": "Number of seconds to sleep (1-300)"
+				"description": "Number of seconds to sleep (minimum 1)"
 			}
 		},
 		"required": ["seconds"]
@@ -53,19 +52,11 @@ func (t *SleepTool) Execute(args map[string]interface{}) (string, error) {
 		return "", errors.New("seconds must be a number")
 	}
 
-	if seconds < 1 || seconds > 300 {
-		return "", errors.New("seconds must be between 1 and 300")
+	if seconds < 1 {
+		return "", errors.New("seconds must be at least 1")
 	}
 
 	time.Sleep(time.Duration(seconds) * time.Second)
 
-	return "Slept for " + formatSeconds(int(seconds)), nil
-}
-
-// formatSeconds formats seconds into a human-readable string.
-func formatSeconds(s int) string {
-	if s == 1 {
-		return "1 second"
-	}
-	return strconv.Itoa(s) + " seconds"
+	return "Slept for " + strconv.Itoa(int(seconds)) + " seconds", nil
 }
