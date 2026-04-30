@@ -74,13 +74,13 @@ func (g *GitHubClient) doRequest(ctx context.Context, method, path string, body 
 
 // RepoInfo holds basic repository information.
 type RepoInfo struct {
-	Name          string `json:"name"`
-	FullName     string `json:"full_name"`
-	Description  string `json:"description"`
-	Owner        string `json:"owner"`
+	Name           string `json:"name"`
+	FullName      string `json:"full_name"`
+	Description   string `json:"description"`
+	Owner         string `json:"owner"`
 	DefaultBranch string `json:"default_branch"`
-	Private      bool   `json:"private"`
-	URL          string `json:"html_url"`
+	Private       bool   `json:"private"`
+	URL           string `json:"html_url"`
 }
 
 // GetRepoInfo fetches information about the repository.
@@ -91,7 +91,7 @@ func (g *GitHubClient) GetRepoInfo(ctx context.Context) (*RepoInfo, error) {
 		return nil, err
 	}
 	if status != http.StatusOK {
-		return nil, fmt.Errorf("GET %s: status %d: %s", path, status, string(body))
+		return nil, fmt.Errorf("GET %s: status %d", path, status)
 	}
 
 	var info RepoInfo
@@ -127,16 +127,16 @@ func (g *GitHubClient) CreateIssue(ctx context.Context, title, body string, labe
 		input["labels"] = labels
 	}
 
-	body, status, err := g.doRequest(ctx, "POST", path, input)
+	respBody, status, err := g.doRequest(ctx, "POST", path, input)
 	if err != nil {
 		return nil, err
 	}
 	if status != http.StatusCreated {
-		return nil, fmt.Errorf("POST %s: status %d: %s", path, status, string(body))
+		return nil, fmt.Errorf("POST %s: status %d", path, status)
 	}
 
 	var issue Issue
-	if err := json.Unmarshal(body, &issue); err != nil {
+	if err := json.Unmarshal(respBody, &issue); err != nil {
 		return nil, fmt.Errorf("unmarshal response: %w", err)
 	}
 	return &issue, nil
@@ -154,7 +154,7 @@ func (g *GitHubClient) ListIssues(ctx context.Context, state, labels string) ([]
 		return nil, err
 	}
 	if status != http.StatusOK {
-		return nil, fmt.Errorf("GET %s: status %d: %s", path, status, string(body))
+		return nil, fmt.Errorf("GET %s: status %d", path, status)
 	}
 
 	var rawIssues []json.RawMessage
@@ -184,7 +184,7 @@ func (g *GitHubClient) GetIssue(ctx context.Context, number int) (*Issue, error)
 		return nil, err
 	}
 	if status != http.StatusOK {
-		return nil, fmt.Errorf("GET %s: status %d: %s", path, status, string(body))
+		return nil, fmt.Errorf("GET %s: status %d", path, status)
 	}
 
 	var issue Issue
@@ -219,16 +219,16 @@ func (g *GitHubClient) CreatePR(ctx context.Context, title, body, head, base str
 		"base":  base,
 	}
 
-	body, status, err := g.doRequest(ctx, "POST", path, input)
+	respBody, status, err := g.doRequest(ctx, "POST", path, input)
 	if err != nil {
 		return nil, err
 	}
 	if status != http.StatusCreated {
-		return nil, fmt.Errorf("POST %s: status %d: %s", path, status, string(body))
+		return nil, fmt.Errorf("POST %s: status %d", path, status)
 	}
 
 	var pr PR
-	if err := json.Unmarshal(body, &pr); err != nil {
+	if err := json.Unmarshal(respBody, &pr); err != nil {
 		return nil, fmt.Errorf("unmarshal response: %w", err)
 	}
 	return &pr, nil
@@ -242,7 +242,7 @@ func (g *GitHubClient) ListPRs(ctx context.Context, state string) ([]PR, error) 
 		return nil, err
 	}
 	if status != http.StatusOK {
-		return nil, fmt.Errorf("GET %s: status %d: %s", path, status, string(body))
+		return nil, fmt.Errorf("GET %s: status %d", path, status)
 	}
 
 	var prs []PR
@@ -269,7 +269,7 @@ func (g *GitHubClient) GetFile(ctx context.Context, path string) (*FileContent, 
 		return nil, err
 	}
 	if status != http.StatusOK {
-		return nil, fmt.Errorf("GET %s: status %d: %s", apiPath, status, string(body))
+		return nil, fmt.Errorf("GET %s: status %d", apiPath, status)
 	}
 
 	var file FileContent
@@ -299,7 +299,7 @@ func (g *GitHubClient) CreateOrUpdateFile(ctx context.Context, path, message, co
 		return "", err
 	}
 	if status != http.StatusOK && status != http.StatusCreated {
-		return "", fmt.Errorf("PUT %s: status %d: %s", apiPath, status, string(body))
+		return "", fmt.Errorf("PUT %s: status %d", apiPath, status)
 	}
 
 	var response map[string]interface{}
@@ -330,7 +330,7 @@ func (g *GitHubClient) ListBranches(ctx context.Context) ([]Branch, error) {
 		return nil, err
 	}
 	if status != http.StatusOK {
-		return nil, fmt.Errorf("GET %s: status %d: %s", path, status, string(body))
+		return nil, fmt.Errorf("GET %s: status %d", path, status)
 	}
 
 	var branches []Branch
@@ -348,7 +348,7 @@ func (g *GitHubClient) CreateBranch(ctx context.Context, branchName, baseBranch 
 		return err
 	}
 	if status != http.StatusOK {
-		return fmt.Errorf("GET %s: status %d: %s", refPath, status, string(body))
+		return fmt.Errorf("GET %s: status %d", refPath, status)
 	}
 
 	var refResponse map[string]interface{}
@@ -375,21 +375,21 @@ func (g *GitHubClient) CreateBranch(ctx context.Context, branchName, baseBranch 
 		return err
 	}
 	if status != http.StatusCreated {
-		return fmt.Errorf("POST %s: status %d: %s", createRefPath, status, string(createResp))
+		return fmt.Errorf("POST %s: status %d", createRefPath, status)
 	}
 
 	return nil
 }
 
-// SearchReposInput holds parameters for searching repositories.
-type SearchReposInput struct {
+// RepoSearchInput holds parameters for searching repositories.
+type RepoSearchInput struct {
 	Query   string `json:"q"`
 	Page    int    `json:"page"`
 	PerPage int    `json:"per_page"`
 }
 
-// SearchResult represents a search result item.
-type SearchResult struct {
+// RepoSearchResult represents a repository search result item.
+type RepoSearchResult struct {
 	Name        string `json:"name"`
 	FullName    string `json:"full_name"`
 	Description string `json:"description"`
@@ -400,7 +400,7 @@ type SearchResult struct {
 }
 
 // SearchRepos searches for repositories.
-func (g *GitHubClient) SearchRepos(ctx context.Context, query string, page, perPage int) ([]SearchResult, error) {
+func (g *GitHubClient) SearchRepos(ctx context.Context, query string, page, perPage int) ([]RepoSearchResult, error) {
 	path := fmt.Sprintf("/search/repositories?q=%s", url.QueryEscape(query))
 	if page > 0 {
 		path += fmt.Sprintf("&page=%d", page)
@@ -416,11 +416,11 @@ func (g *GitHubClient) SearchRepos(ctx context.Context, query string, page, perP
 		return nil, err
 	}
 	if status != http.StatusOK {
-		return nil, fmt.Errorf("GET %s: status %d: %s", path, status, string(body))
+		return nil, fmt.Errorf("GET %s: status %d", path, status)
 	}
 
 	var response struct {
-		Items []SearchResult `json:"items"`
+		Items []RepoSearchResult `json:"items"`
 	}
 	if err := json.Unmarshal(body, &response); err != nil {
 		return nil, fmt.Errorf("unmarshal response: %w", err)
