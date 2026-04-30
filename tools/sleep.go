@@ -2,6 +2,7 @@ package tools
 
 import (
 	"errors"
+	"strconv"
 	"time"
 )
 
@@ -66,5 +67,5 @@ func formatSeconds(s int) string {
 	if s == 1 {
 		return "1 second"
 	}
-	return string(rune('0'+s%10)) + " seconds"
+	return strconv.Itoa(s) + " seconds"
 }
