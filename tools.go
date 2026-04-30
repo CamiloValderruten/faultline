@@ -397,6 +397,24 @@ func (te *ToolExecutor) ToolDefs() []openai.Tool {
 				Parameters: map[string]interface{}{
 					"type":       "object",
 					"properties": map[string]interface{}{},
+		{
+			Type: openai.ToolTypeFunction,
+			Function: &openai.FunctionDefinition{
+				Name:        "sleep",
+				Description: "Pause execution for a specified number of seconds. Useful for rate limiting and spacing out operations.",
+				Parameters: map[string]interface{}{
+					"type": "object",
+					"properties": map[string]interface{}{
+						"seconds": map[string]interface{}{
+							"type":        "integer",
+							"minimum":     1,
+							"description": "Number of seconds to sleep (minimum 1)",
+						},
+					},
+					"required": []string{"seconds"},
+				},
+			},
+		},
 				},
 			},
 		},
@@ -848,6 +866,8 @@ func (te *ToolExecutor) Execute(ctx context.Context, call openai.ToolCall) strin
 	te.logger.Info("tool call", "name", name, "args_len", len(args))
 
 	switch name {
+	case "sleep":
+		return te.sleep(args)
 	case "web_fetch":
 		return te.webFetch(args)
 	case "memory_read":
