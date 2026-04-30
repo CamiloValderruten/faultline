@@ -415,6 +415,24 @@ func (te *ToolExecutor) ToolDefs() []openai.Tool {
 				},
 			},
 		},
+		{
+			Type: openai.ToolTypeFunction,
+			Function: &openai.FunctionDefinition{
+				Name:        "sleep",
+				Description: "Pause execution for a specified number of seconds. Useful for rate limiting and spacing out operations.",
+				Parameters: map[string]interface{}{
+					"type": "object",
+					"properties": map[string]interface{}{
+						"seconds": map[string]interface{}{
+							"type":        "integer",
+							"minimum":     1,
+							"description": "Number of seconds to sleep (minimum 1)",
+						},
+					},
+					"required": []string{"seconds"},
+				},
+			},
+		},
 				},
 			},
 		},
@@ -868,6 +886,8 @@ func (te *ToolExecutor) Execute(ctx context.Context, call openai.ToolCall) strin
 	switch name {
 	case "sleep":
 		return te.sleep(args)
+	case "sleep":
+		return te.sleep(args)
 	case "web_fetch":
 		return te.webFetch(args)
 	case "memory_read":
@@ -953,6 +973,25 @@ func (te *ToolExecutor) sandboxShell(ctx context.Context, argsJSON string) strin
 		return fmt.Sprintf("Error: %s", err)
 	}
 	return output
+}
+
+// sleep pauses execution for the specified number of seconds.
+// Used for rate limiting and introducing delays between operations.
+func (te *ToolExecutor) sleep(argsJSON string) string {
+	var args struct {
+		Seconds int `json:"seconds"`
+	}
+	if err := json.Unmarshal([]byte(argsJSON), &args); err != nil {
+		return fmt.Sprintf("Error parsing arguments: %s", err)
+	}
+
+	if args.Seconds < 1 {
+		return "Error: seconds must be at least 1"
+	}
+
+	time.Sleep(time.Duration(args.Seconds) * time.Second)
+
+	return fmt.Sprintf("Slept for %d seconds", args.Seconds)
 }
 
 func (te *ToolExecutor) webFetch(argsJSON string) string {
