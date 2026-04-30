@@ -370,7 +370,7 @@ func (g *GitHubClient) CreateBranch(ctx context.Context, branchName, baseBranch 
 		"ref": fmt.Sprintf("refs/heads/%s", branchName),
 		"sha": sha,
 	}
-	createResp, status, err := g.doRequest(ctx, "POST", createRefPath, createBody)
+	_, status, err := g.doRequest(ctx, "POST", createRefPath, createBody)
 	if err != nil {
 		return err
 	}
