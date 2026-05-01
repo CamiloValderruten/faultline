@@ -74,13 +74,13 @@ func (g *GitHubClient) doRequest(ctx context.Context, method, path string, body 
 
 // RepoInfo holds basic repository information.
 type RepoInfo struct {
-	Name           string `json:"name"`
-	FullName       string `json:"full_name"`
-	Description    string `json:"description"`
-	Owner          string `json:"owner"`
-	DefaultBranch  string `json:"default_branch"`
-	Private        bool   `json:"private"`
-	URL            string `json:"html_url"`
+	Name string `json:"name"`
+	FullName string `json:"full_name"`
+	Description string `json:"description"`
+	Owner string `json:"owner"`
+	DefaultBranch string `json:"default_branch"`
+	Private bool `json:"private"`
+	URL string `json:"html_url"`
 }
 
 // GetRepoInfo fetches information about the repository.
