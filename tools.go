@@ -961,7 +961,7 @@ func (te *ToolExecutor) sandboxShell(ctx context.Context, argsJSON string) strin
 // Used for rate limiting and introducing delays between operations.
 func (te *ToolExecutor) sleep(argsJSON string) string {
 	var args struct {
-		Seconds int ` + '`json:"seconds"' + `
+		Seconds int `json:"seconds"`
 	}
 	if err := json.Unmarshal([]byte(argsJSON), &args); err != nil {
 		return fmt.Sprintf("Error parsing arguments: %s", err)
