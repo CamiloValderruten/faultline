@@ -74,13 +74,13 @@ func (g *GitHubClient) doRequest(ctx context.Context, method, path string, body 
 
 // RepoInfo holds basic repository information.
 type RepoInfo struct {
-	Name string `json:"name"`
-	FullName string `json:"full_name"`
-	Description string `json:"description"`
-	Owner string `json:"owner"`
-	DefaultBranch string `json:"default_branch"`
+	Name string  json:"name"`
+	FullName string  json:"full_name"`
+	Description string  json:"description"`
+	Owner string  json:"owner"`
+	DefaultBranch string  json:"default_branch"`
 	Private bool `json:"private"`
-	URL string `json:"html_url"`
+	URL string  json:"html_url"`
 }
 
 // GetRepoInfo fetches information about the repository.
@@ -105,14 +105,14 @@ func (g *GitHubClient) GetRepoInfo(ctx context.Context) (*RepoInfo, error) {
 // Issue represents a GitHub issue or pull request.
 type Issue struct {
 	Number    int      `json:"number"`
-	Title     string   `json:"title"`
-	Body      string   `json:"body"`
-	State     string   `json:"state"`
-	Author    string   `json:"user"`
-	Labels    []string `json:"labels"`
-	CreatedAt string   `json:"created_at"`
-	UpdatedAt string   `json:"updated_at"`
-	URL       string   `json:"html_url"`
+	Title     string    json:"title"`
+	Body      string    json:"body"`
+	State     string    json:"state"`
+	Author    string    json:"user"`
+	Labels    []string  json:"labels"`
+	CreatedAt string    json:"created_at"`
+	UpdatedAt string    json:"updated_at"`
+	URL       string    json:"html_url"`
 	IsPR      bool     `json:"pull_request,omitempty"`
 }
 
@@ -197,16 +197,16 @@ func (g *GitHubClient) GetIssue(ctx context.Context, number int) (*Issue, error)
 // PR represents a GitHub pull request.
 type PR struct {
 	Number    int      `json:"number"`
-	Title     string   `json:"title"`
-	Body      string   `json:"body"`
-	State     string   `json:"state"`
-	Author    string   `json:"user"`
-	Head      string   `json:"head"`
-	Base      string   `json:"base"`
+	Title     string    json:"title"`
+	Body      string    json:"body"`
+	State     string    json:"state"`
+	Author    string    json:"user"`
+	Head      string    json:"head"`
+	Base      string    json:"base"`
 	Draft     bool     `json:"draft"`
-	Labels    []string `json:"labels"`
-	CreatedAt string   `json:"created_at"`
-	URL       string   `json:"html_url"`
+	Labels    []string  json:"labels"`
+	CreatedAt string    json:"created_at"`
+	URL       string    json:"html_url"`
 }
 
 // CreatePR creates a new pull request.
@@ -254,10 +254,10 @@ func (g *GitHubClient) ListPRs(ctx context.Context, state string) ([]PR, error) 
 
 // FileContent holds the content of a file.
 type FileContent struct {
-	Name    string `json:"name"`
-	Path    string `json:"path"`
-	Content string `json:"content"` // base64-encoded
-	SHA     string `json:"sha"`
+	Name    string  json:"name"`
+	Path    string  json:"path"`
+	Content string  json:"content"` // base64-encoded
+	SHA     string  json:"sha"`
 	Size    int    `json:"size"`
 }
 
@@ -317,9 +317,9 @@ func (g *GitHubClient) CreateOrUpdateFile(ctx context.Context, path, message, co
 
 // Branch represents a git branch.
 type Branch struct {
-	Name      string `json:"name"`
+	Name      string  json:"name"`
 	Protected bool   `json:"protected"`
-	SHA       string `json:"commit"`
+	SHA       string  json:"commit"`
 }
 
 // ListBranches fetches all branches in the repository.
@@ -383,20 +383,20 @@ func (g *GitHubClient) CreateBranch(ctx context.Context, branchName, baseBranch 
 
 // RepoSearchInput holds parameters for searching repositories.
 type RepoSearchInput struct {
-	Query   string `json:"q"`
+	Query   string  json:"q"`
 	Page    int    `json:"page"`
 	PerPage int    `json:"per_page"`
 }
 
 // RepoSearchResult represents a repository search result item.
 type RepoSearchResult struct {
-	Name        string `json:"name"`
-	FullName    string `json:"full_name"`
-	Description string `json:"description"`
-	Owner       string `json:"owner"`
+	Name        string  json:"name"`
+	FullName    string  json:"full_name"`
+	Description string  json:"description"`
+	Owner       string  json:"owner"`
 	Stars       int    `json:"stargazers_count"`
-	Language    string `json:"language"`
-	URL         string `json:"html_url"`
+	Language    string  json:"language"`
+	URL         string  json:"html_url"`
 }
 
 // SearchRepos searches for repositories.
