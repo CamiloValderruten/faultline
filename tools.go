@@ -956,7 +956,6 @@ func (te *ToolExecutor) sandboxShell(ctx context.Context, argsJSON string) strin
 	return output
 }
 
-
 // sleep pauses execution for the specified number of seconds.
 // Used for rate limiting and introducing delays between operations.
 func (te *ToolExecutor) sleep(argsJSON string) string {
@@ -975,7 +974,6 @@ func (te *ToolExecutor) sleep(argsJSON string) string {
 
 	return fmt.Sprintf("Slept for %d seconds", args.Seconds)
 }
-
 
 func (te *ToolExecutor) webFetch(argsJSON string) string {
 	var args struct {
