@@ -26,7 +26,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/matjam/faultline/internal/adapters/auth/users"
+	"github.com/CamiloValderruten/faultline/internal/adapters/auth/users"
 )
 
 // Deps bundles the dependencies the composition root injects.

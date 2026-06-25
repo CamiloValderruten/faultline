@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/matjam/faultline/internal/adapters/auth/users"
+	"github.com/CamiloValderruten/faultline/internal/adapters/auth/users"
 )
 
 // loginData drives the login template.

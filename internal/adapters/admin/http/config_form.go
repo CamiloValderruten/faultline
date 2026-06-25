@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/matjam/faultline/internal/config"
+	"github.com/CamiloValderruten/faultline/internal/config"
 )
 
 // The configuration form is generated from the *config.Config struct

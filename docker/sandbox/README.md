@@ -2,7 +2,7 @@
 
 Multi-runtime execution image for the Faultline agent's sandbox tools.
 
-Published as `ghcr.io/matjam/faultline-sandbox` by the
+Published as `ghcr.io/camilovalderruten/faultline-sandbox` by the
 `.github/workflows/sandbox-image.yml` workflow.
 
 ## What's inside

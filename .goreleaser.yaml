@@ -35,9 +35,9 @@ builds:
       - -trimpath
     ldflags:
       - -s -w
-      - -X github.com/matjam/faultline/internal/version.Version={{ .Version }}
-      - -X github.com/matjam/faultline/internal/version.Commit={{ .ShortCommit }}
-      - -X github.com/matjam/faultline/internal/version.BuildTime={{ .Date }}
+      - -X github.com/CamiloValderruten/faultline/internal/version.Version={{ .Version }}
+      - -X github.com/CamiloValderruten/faultline/internal/version.Commit={{ .ShortCommit }}
+      - -X github.com/CamiloValderruten/faultline/internal/version.BuildTime={{ .Date }}
 
 archives:
   - id: default

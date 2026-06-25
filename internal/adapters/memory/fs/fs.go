@@ -13,7 +13,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/matjam/faultline/internal/search/bm25"
+	"github.com/CamiloValderruten/faultline/internal/search/bm25"
 )
 
 // trashDir is the name of the trash subdirectory inside the memory store.

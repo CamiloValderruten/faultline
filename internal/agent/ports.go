@@ -4,12 +4,12 @@ import (
 	"context"
 	"time"
 
-	"github.com/matjam/faultline/internal/adapters/llm/kobold"
-	"github.com/matjam/faultline/internal/llm"
-	"github.com/matjam/faultline/internal/schedule"
-	"github.com/matjam/faultline/internal/search/bm25"
-	"github.com/matjam/faultline/internal/skills"
-	"github.com/matjam/faultline/internal/subagent"
+	"github.com/CamiloValderruten/faultline/internal/adapters/llm/kobold"
+	"github.com/CamiloValderruten/faultline/internal/llm"
+	"github.com/CamiloValderruten/faultline/internal/schedule"
+	"github.com/CamiloValderruten/faultline/internal/search/bm25"
+	"github.com/CamiloValderruten/faultline/internal/skills"
+	"github.com/CamiloValderruten/faultline/internal/subagent"
 )
 
 // ChatModel is the LLM port. The agent does not care which backend

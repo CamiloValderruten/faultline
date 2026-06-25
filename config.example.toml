@@ -123,7 +123,7 @@ enabled = false
 # instead of :latest if you want a specific image version locked down for
 # a deployment. The image is published from docker/sandbox/Dockerfile by
 # the sandbox-image GitHub Actions workflow.
-image = "ghcr.io/matjam/faultline-sandbox:latest"
+image = "ghcr.io/camilovalderruten/faultline-sandbox:latest"
 
 # Sandbox working directory on the host. Subdirs are auto-created for scripts/,
 # input/, output/, venv/ (Python), node/ (Node), mcp/ (stdio MCP), and cache/.
@@ -176,7 +176,7 @@ enabled = false
 check_interval = "1h"
 
 # "owner/name" of the GitHub repository whose releases we poll.
-github_repo = "matjam/faultline"
+github_repo = "CamiloValderruten/faultline"
 
 # What to do after a successful update applies. Options:
 #   "exit"      - save state and os.Exit(0). Suitable for any process

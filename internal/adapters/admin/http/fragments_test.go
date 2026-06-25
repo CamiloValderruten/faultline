@@ -13,10 +13,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/matjam/faultline/internal/adapters/auth/users"
-	"github.com/matjam/faultline/internal/agent"
-	"github.com/matjam/faultline/internal/subagent"
-	"github.com/matjam/faultline/internal/tools"
+	"github.com/CamiloValderruten/faultline/internal/adapters/auth/users"
+	"github.com/CamiloValderruten/faultline/internal/agent"
+	"github.com/CamiloValderruten/faultline/internal/subagent"
+	"github.com/CamiloValderruten/faultline/internal/tools"
 )
 
 // fakeAgentInspector is a deterministic inspector for fragment tests.

@@ -180,7 +180,7 @@ type UpdateConfig struct {
 	CheckInterval duration `toml:"check_interval"`
 
 	// GitHubRepo is the "owner/name" path of the repository whose
-	// releases we poll. Defaults to "matjam/faultline".
+	// releases we poll. Defaults to "CamiloValderruten/faultline".
 	GitHubRepo string `toml:"github_repo"`
 
 	// RestartMode controls what the agent does after a successful
@@ -532,7 +532,7 @@ func Default() *Config {
 			// sandbox-image GH Actions workflow. Pin to a versioned
 			// tag in your config.toml if you want a specific image
 			// version locked down.
-			Image:       "ghcr.io/matjam/faultline-sandbox:latest",
+			Image:       "ghcr.io/camilovalderruten/faultline-sandbox:latest",
 			Dir:         "./sandbox",
 			Timeout:     duration(5 * time.Minute),
 			Network:     false,
@@ -549,7 +549,7 @@ func Default() *Config {
 		Update: UpdateConfig{
 			Enabled:       false,
 			CheckInterval: duration(1 * time.Hour),
-			GitHubRepo:    "matjam/faultline",
+			GitHubRepo:    "CamiloValderruten/faultline",
 			RestartMode:   "exit",
 		},
 		MCP: MCPConfig{

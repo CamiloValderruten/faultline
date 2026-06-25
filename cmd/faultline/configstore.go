@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 	"sync"
 
-	"github.com/matjam/faultline/internal/config"
+	"github.com/CamiloValderruten/faultline/internal/config"
 )
 
 // fileConfigStore satisfies adminhttp.ConfigStore by reading and

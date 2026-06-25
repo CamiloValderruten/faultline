@@ -10,7 +10,7 @@ import (
 
 	"gopkg.in/yaml.v3"
 
-	"github.com/matjam/faultline/internal/skills"
+	"github.com/CamiloValderruten/faultline/internal/skills"
 )
 
 // frontmatterDelim is the YAML frontmatter fence used by SKILL.md.

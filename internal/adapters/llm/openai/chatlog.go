@@ -6,8 +6,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/matjam/faultline/internal/llm"
-	"github.com/matjam/faultline/internal/log"
+	"github.com/CamiloValderruten/faultline/internal/llm"
+	"github.com/CamiloValderruten/faultline/internal/log"
 )
 
 // ChatLogger writes a human-readable transcript of every message exchanged

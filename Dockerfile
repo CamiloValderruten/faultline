@@ -15,9 +15,9 @@ ARG VERSION=dev
 ARG COMMIT
 RUN CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH} \
     go build -a -ldflags="-s -w \
-      -X github.com/matjam/faultline/internal/version.Version=${VERSION} \
-      -X github.com/matjam/faultline/internal/version.Commit=${COMMIT:-$(git rev-parse --short HEAD 2>/dev/null || echo unknown)} \
-      -X github.com/matjam/faultline/internal/version.BuildTime=$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+      -X github.com/CamiloValderruten/faultline/internal/version.Version=${VERSION} \
+      -X github.com/CamiloValderruten/faultline/internal/version.Commit=${COMMIT:-$(git rev-parse --short HEAD 2>/dev/null || echo unknown)} \
+      -X github.com/CamiloValderruten/faultline/internal/version.BuildTime=$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
     -o faultline ./cmd/faultline
 
 # Bundle CA certificates for the final distroless image

@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/matjam/faultline/internal/adapters/mcp"
-	"github.com/matjam/faultline/internal/llm"
+	"github.com/CamiloValderruten/faultline/internal/adapters/mcp"
+	"github.com/CamiloValderruten/faultline/internal/llm"
 )
 
 func TestToolDefsAdvertisesOnlyAllowlistedMCPTools(t *testing.T) {

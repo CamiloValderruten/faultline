@@ -11,7 +11,7 @@ import (
 
 	imap "github.com/BrianLeishman/go-imap"
 
-	"github.com/matjam/faultline/internal/config"
+	"github.com/CamiloValderruten/faultline/internal/config"
 )
 
 // Client wraps a go-imap dialer for the duration of a single fetch

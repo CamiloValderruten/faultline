@@ -6,10 +6,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/matjam/faultline/internal/llm"
-	prompt "github.com/matjam/faultline/internal/prompts"
-	skillsdomain "github.com/matjam/faultline/internal/skills"
-	"github.com/matjam/faultline/internal/subagent"
+	"github.com/CamiloValderruten/faultline/internal/llm"
+	prompt "github.com/CamiloValderruten/faultline/internal/prompts"
+	skillsdomain "github.com/CamiloValderruten/faultline/internal/skills"
+	"github.com/CamiloValderruten/faultline/internal/subagent"
 )
 
 // Prompt-migration runner. Called once at startup, between

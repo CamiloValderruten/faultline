@@ -4,7 +4,7 @@ import (
 	"net/http"
 	"strings"
 
-	skillsfs "github.com/matjam/faultline/internal/adapters/skills/fs"
+	skillsfs "github.com/CamiloValderruten/faultline/internal/adapters/skills/fs"
 )
 
 // fragSkillsData backs frag_skills.html — the per-skill toggle list.

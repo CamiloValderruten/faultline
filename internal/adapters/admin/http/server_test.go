@@ -13,7 +13,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/matjam/faultline/internal/adapters/auth/users"
+	"github.com/CamiloValderruten/faultline/internal/adapters/auth/users"
 )
 
 // testServer wires a real *Server backed by real users + sessions

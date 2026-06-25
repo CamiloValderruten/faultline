@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/matjam/faultline/internal/config"
+	"github.com/CamiloValderruten/faultline/internal/config"
 )
 
 // newTestAgent builds an Agent shell wired only with what Snapshot

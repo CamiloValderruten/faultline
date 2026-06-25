@@ -7,9 +7,9 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/matjam/faultline/internal/adapters/mcp"
-	"github.com/matjam/faultline/internal/adapters/sandbox/docker"
-	"github.com/matjam/faultline/internal/config"
+	"github.com/CamiloValderruten/faultline/internal/adapters/mcp"
+	"github.com/CamiloValderruten/faultline/internal/adapters/sandbox/docker"
+	"github.com/CamiloValderruten/faultline/internal/config"
 )
 
 type sandboxMCPStdioRunner struct {

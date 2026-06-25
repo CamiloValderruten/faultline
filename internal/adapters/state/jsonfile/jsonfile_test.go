@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/matjam/faultline/internal/llm"
+	"github.com/CamiloValderruten/faultline/internal/llm"
 )
 
 // captureLogger returns a logger writing to a buffer so tests can both

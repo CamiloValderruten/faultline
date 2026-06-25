@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/matjam/faultline/internal/llm"
+	"github.com/CamiloValderruten/faultline/internal/llm"
 )
 
 // TestChatLogger_FormatPreservesPriorityFields exercises formatMessage

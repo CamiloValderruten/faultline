@@ -17,9 +17,9 @@ Pre-built binaries are published on every tagged release for `linux/amd64`, `lin
 
 ```sh
 # Pick the right tarball for your platform from the latest release at
-# https://github.com/matjam/faultline/releases/latest
-curl -L -O https://github.com/matjam/faultline/releases/latest/download/faultline_<version>_linux_x86_64.tar.gz
-curl -L -O https://github.com/matjam/faultline/releases/latest/download/SHA256SUMS
+# https://github.com/CamiloValderruten/faultline/releases/latest
+curl -L -O https://github.com/CamiloValderruten/faultline/releases/latest/download/faultline_<version>_linux_x86_64.tar.gz
+curl -L -O https://github.com/CamiloValderruten/faultline/releases/latest/download/SHA256SUMS
 
 # Verify
 sha256sum -c SHA256SUMS --ignore-missing
@@ -43,9 +43,9 @@ For a build with version metadata baked in (matching what release builds embed):
 
 ```sh
 go build \
-  -ldflags="-X github.com/matjam/faultline/internal/version.Version=$(git describe --tags --always) \
-            -X github.com/matjam/faultline/internal/version.Commit=$(git rev-parse --short HEAD) \
-            -X github.com/matjam/faultline/internal/version.BuildTime=$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+  -ldflags="-X github.com/CamiloValderruten/faultline/internal/version.Version=$(git describe --tags --always) \
+            -X github.com/CamiloValderruten/faultline/internal/version.Commit=$(git rev-parse --short HEAD) \
+            -X github.com/CamiloValderruten/faultline/internal/version.BuildTime=$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
   -o faultline ./cmd/faultline
 ```
 
@@ -173,7 +173,7 @@ services:
 
 Alternative without the socket-mount risk: **don't run faultline in a container.** The native systemd path above gets you supervisor restart, log capture, and resource limits via `MemoryMax=` / `CPUQuota=` etc. without the `docker.sock` blast radius.
 
-Note that there is no published `ghcr.io/matjam/faultline` image; the published image is the **sandbox** image (`ghcr.io/matjam/faultline-sandbox`) used by the agent's sandbox feature. If you containerize faultline itself, you build that image yourself.
+Note that there is no published `ghcr.io/camilovalderruten/faultline` image; the published image is the **sandbox** image (`ghcr.io/camilovalderruten/faultline-sandbox`) used by the agent's sandbox feature. If you containerize faultline itself, you build that image yourself.
 
 ## Auto-update
 
@@ -251,7 +251,7 @@ Bidirectional communication with a human collaborator via Telegram. Incoming mes
 
 ### Multi-runtime Sandbox
 
-An optional Docker-based execution environment. The default image (`ghcr.io/matjam/faultline-sandbox`, built from `docker/sandbox/Dockerfile`) is Arch-based and ships Python+pip, [`uv`](https://github.com/astral-sh/uv) + `uvx`, Node.js + npm + npx, [Bun](https://bun.sh), [Deno](https://deno.com), Go, plus common CLI tools (curl, jq, ripgrep, fd, git, ...). `sandbox_execute` runs Python scripts via `uv`; `sandbox_shell` gives the agent arbitrary shell access to any runtime on PATH. Containers are ephemeral (created per execution, removed after); the sandbox has a flat file structure (`scripts/`, `input/`, `output/`) and supports configurable network access, memory limits, and execution timeouts. Configure a different image in `config.toml` if you need something else.
+An optional Docker-based execution environment. The default image (`ghcr.io/camilovalderruten/faultline-sandbox`, built from `docker/sandbox/Dockerfile`) is Arch-based and ships Python+pip, [`uv`](https://github.com/astral-sh/uv) + `uvx`, Node.js + npm + npx, [Bun](https://bun.sh), [Deno](https://deno.com), Go, plus common CLI tools (curl, jq, ripgrep, fd, git, ...). `sandbox_execute` runs Python scripts via `uv`; `sandbox_shell` gives the agent arbitrary shell access to any runtime on PATH. Containers are ephemeral (created per execution, removed after); the sandbox has a flat file structure (`scripts/`, `input/`, `output/`) and supports configurable network access, memory limits, and execution timeouts. Configure a different image in `config.toml` if you need something else.
 
 ### IMAP Email (optional)
 

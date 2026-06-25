@@ -11,7 +11,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/matjam/faultline/internal/llm"
+	"github.com/CamiloValderruten/faultline/internal/llm"
 )
 
 // Config is the dedicated MCP server config file shape.

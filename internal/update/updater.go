@@ -18,7 +18,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/matjam/faultline/internal/version"
+	"github.com/CamiloValderruten/faultline/internal/version"
 )
 
 // rateLimitDefaultBackoff is the delay used when GitHub returns a

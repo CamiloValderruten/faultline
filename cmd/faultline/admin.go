@@ -10,11 +10,11 @@ import (
 	"sync"
 	"time"
 
-	adminhttp "github.com/matjam/faultline/internal/adapters/admin/http"
-	"github.com/matjam/faultline/internal/adapters/auth/users"
-	"github.com/matjam/faultline/internal/config"
-	flog "github.com/matjam/faultline/internal/log"
-	"github.com/matjam/faultline/internal/tools"
+	adminhttp "github.com/CamiloValderruten/faultline/internal/adapters/admin/http"
+	"github.com/CamiloValderruten/faultline/internal/adapters/auth/users"
+	"github.com/CamiloValderruten/faultline/internal/config"
+	flog "github.com/CamiloValderruten/faultline/internal/log"
+	"github.com/CamiloValderruten/faultline/internal/tools"
 )
 
 // adminServer bundles the admin-side state that needs to outlive the

@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"github.com/BurntSushi/toml"
-	"github.com/matjam/faultline/internal/skills"
+	"github.com/CamiloValderruten/faultline/internal/skills"
 )
 
 // stateFileShape is the on-disk shape of skills.toml. Kept simple:

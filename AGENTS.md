@@ -302,7 +302,7 @@ Shared LLM-shaped value types. The OpenAI chat-completions wire shape is treated
 
 ### internal/adapters/sandbox/docker/
 
-`docker.Sandbox` for Docker-backed script execution. The default image (`ghcr.io/matjam/faultline-sandbox`, built from `docker/sandbox/Dockerfile`) is a multi-runtime Arch-based image with Python+pip, uv+uvx, Node+npm+npx, Bun, Deno, Go, and common CLI tools (curl, jq, ripgrep, fd, git, ...). Any image with `sh` and `uv` on PATH satisfies the adapter's contract; the image is configurable per deployment.
+`docker.Sandbox` for Docker-backed script execution. The default image (`ghcr.io/camilovalderruten/faultline-sandbox`, built from `docker/sandbox/Dockerfile`) is a multi-runtime Arch-based image with Python+pip, uv+uvx, Node+npm+npx, Bun, Deno, Go, and common CLI tools (curl, jq, ripgrep, fd, git, ...). Any image with `sh` and `uv` on PATH satisfies the adapter's contract; the image is configurable per deployment.
 
 - Flat directory layout: `scripts/`, `input/`, `output/` plus a seeded `pyproject.toml`.
 - Ephemeral containers per operation (`docker run --rm`). Every run passes `--user <host_uid>:<host_gid>` for file ownership and `--security-opt no-new-privileges` to block setuid escalation. The image's Dockerfile additionally bakes in `USER 65532:65532` as a defense-in-depth fallback; if `--user` is ever omitted by a future code path, the container still refuses to run as root. The agent itself refuses to start as root (`os.Getuid()==0` is fatal in `cmd/faultline/main.go` and again in `sandbox.New`).

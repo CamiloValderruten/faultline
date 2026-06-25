@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/matjam/faultline/internal/subagent"
+	"github.com/CamiloValderruten/faultline/internal/subagent"
 )
 
 // skillAuditPromptTemplate is the embedded audit instructions. The

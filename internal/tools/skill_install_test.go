@@ -14,8 +14,8 @@ import (
 	"strings"
 	"testing"
 
-	skillsfs "github.com/matjam/faultline/internal/adapters/skills/fs"
-	"github.com/matjam/faultline/internal/subagent"
+	skillsfs "github.com/CamiloValderruten/faultline/internal/adapters/skills/fs"
+	"github.com/CamiloValderruten/faultline/internal/subagent"
 )
 
 // silentTestLogger discards all log output so tests don't pollute the run.

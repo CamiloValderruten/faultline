@@ -5,11 +5,11 @@ import (
 	"sync"
 	"time"
 
-	skillsfs "github.com/matjam/faultline/internal/adapters/skills/fs"
-	"github.com/matjam/faultline/internal/agent"
-	"github.com/matjam/faultline/internal/subagent"
-	"github.com/matjam/faultline/internal/tools"
-	"github.com/matjam/faultline/internal/update"
+	skillsfs "github.com/CamiloValderruten/faultline/internal/adapters/skills/fs"
+	"github.com/CamiloValderruten/faultline/internal/agent"
+	"github.com/CamiloValderruten/faultline/internal/subagent"
+	"github.com/CamiloValderruten/faultline/internal/tools"
+	"github.com/CamiloValderruten/faultline/internal/update"
 )
 
 // AgentInspector is the read-only port the admin server uses to

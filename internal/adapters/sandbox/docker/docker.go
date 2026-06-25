@@ -18,8 +18,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/matjam/faultline/internal/config"
-	"github.com/matjam/faultline/internal/log"
+	"github.com/CamiloValderruten/faultline/internal/config"
+	"github.com/CamiloValderruten/faultline/internal/log"
 )
 
 // Sandbox manages a Python script execution environment backed by Docker and uv.

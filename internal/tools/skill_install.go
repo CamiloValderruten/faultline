@@ -19,9 +19,9 @@ import (
 	"strings"
 	"time"
 
-	skillsfs "github.com/matjam/faultline/internal/adapters/skills/fs"
-	"github.com/matjam/faultline/internal/llm"
-	"github.com/matjam/faultline/internal/skills"
+	skillsfs "github.com/CamiloValderruten/faultline/internal/adapters/skills/fs"
+	"github.com/CamiloValderruten/faultline/internal/llm"
+	"github.com/CamiloValderruten/faultline/internal/skills"
 )
 
 // Install caps. The agent should never need to fetch a skill larger

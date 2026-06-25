@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/matjam/faultline/internal/subagent"
+	"github.com/CamiloValderruten/faultline/internal/subagent"
 )
 
 func TestParseAuditVerdict_Approve(t *testing.T) {

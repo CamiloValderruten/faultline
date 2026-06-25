@@ -10,9 +10,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/matjam/faultline/internal/adapters/mcp"
-	"github.com/matjam/faultline/internal/llm"
-	"github.com/matjam/faultline/internal/subagent"
+	"github.com/CamiloValderruten/faultline/internal/adapters/mcp"
+	"github.com/CamiloValderruten/faultline/internal/llm"
+	"github.com/CamiloValderruten/faultline/internal/subagent"
 )
 
 func TestMCPConfigUpdateRequiresRawApproval(t *testing.T) {

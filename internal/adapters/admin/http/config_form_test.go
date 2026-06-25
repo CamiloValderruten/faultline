@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/matjam/faultline/internal/config"
+	"github.com/CamiloValderruten/faultline/internal/config"
 )
 
 func TestBuildConfigForm_CoversEverySection(t *testing.T) {

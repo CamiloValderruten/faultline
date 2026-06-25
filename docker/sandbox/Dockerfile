@@ -20,11 +20,11 @@
 #
 # Base is Debian bookworm because it publishes both amd64 and arm64 images.
 # Reproducibility comes from pinning the *published* image
-# (ghcr.io/matjam/faultline-sandbox:vX.Y.Z), not from pinning every package.
+# (ghcr.io/camilovalderruten/faultline-sandbox:vX.Y.Z), not from pinning every package.
 
 FROM debian:bookworm-slim
 
-LABEL org.opencontainers.image.source="https://github.com/matjam/faultline"
+LABEL org.opencontainers.image.source="https://github.com/CamiloValderruten/faultline"
 LABEL org.opencontainers.image.description="Faultline agent sandbox: multi-runtime execution environment (Python/uv, Node, Bun, Deno, Go) on Debian"
 LABEL org.opencontainers.image.licenses="MIT"
 
@@ -115,7 +115,7 @@ RUN curl -fsSL https://bun.sh/install | bash \
 #
 # These match the -e flags the Go side passes on every `docker run`. Baking
 # them in lets ad-hoc invocations (e.g. operator debugging via
-# `docker run --rm -it ghcr.io/matjam/faultline-sandbox`) behave the same
+# `docker run --rm -it ghcr.io/camilovalderruten/faultline-sandbox`) behave the same
 # as the agent's invocations. uv honours UV_PROJECT_ENVIRONMENT and
 # UV_CACHE_DIR whenever a project root is on the working directory.
 # ---------------------------------------------------------------------------

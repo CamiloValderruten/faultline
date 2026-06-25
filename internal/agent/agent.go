@@ -13,15 +13,15 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/matjam/faultline/internal/adapters/llm/kobold"
-	"github.com/matjam/faultline/internal/adapters/memory/fs"
-	"github.com/matjam/faultline/internal/config"
-	"github.com/matjam/faultline/internal/llm"
-	prompt "github.com/matjam/faultline/internal/prompts"
-	"github.com/matjam/faultline/internal/schedule"
-	"github.com/matjam/faultline/internal/search/bm25"
-	skillsdomain "github.com/matjam/faultline/internal/skills"
-	"github.com/matjam/faultline/internal/subagent"
+	"github.com/CamiloValderruten/faultline/internal/adapters/llm/kobold"
+	"github.com/CamiloValderruten/faultline/internal/adapters/memory/fs"
+	"github.com/CamiloValderruten/faultline/internal/config"
+	"github.com/CamiloValderruten/faultline/internal/llm"
+	prompt "github.com/CamiloValderruten/faultline/internal/prompts"
+	"github.com/CamiloValderruten/faultline/internal/schedule"
+	"github.com/CamiloValderruten/faultline/internal/search/bm25"
+	skillsdomain "github.com/CamiloValderruten/faultline/internal/skills"
+	"github.com/CamiloValderruten/faultline/internal/subagent"
 )
 
 // Agent is the autonomous agent that runs in a continuous loop.

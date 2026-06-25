@@ -5,7 +5,7 @@ import (
 	"runtime"
 	"time"
 
-	"github.com/matjam/faultline/internal/version"
+	"github.com/CamiloValderruten/faultline/internal/version"
 )
 
 // pageData is the common set of fields every full-page render needs:

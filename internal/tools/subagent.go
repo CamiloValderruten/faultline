@@ -8,8 +8,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/matjam/faultline/internal/llm"
-	"github.com/matjam/faultline/internal/subagent"
+	"github.com/CamiloValderruten/faultline/internal/llm"
+	"github.com/CamiloValderruten/faultline/internal/subagent"
 )
 
 // subagentToolDefs returns the tool definitions for subagent

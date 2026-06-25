@@ -5,7 +5,7 @@ import (
 	"net/http"
 
 	"github.com/BurntSushi/toml"
-	"github.com/matjam/faultline/internal/config"
+	"github.com/CamiloValderruten/faultline/internal/config"
 )
 
 // configurationPage backs configuration.html. The form descriptor is

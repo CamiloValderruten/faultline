@@ -12,7 +12,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/matjam/faultline/internal/llm"
+	"github.com/CamiloValderruten/faultline/internal/llm"
 )
 
 // Client is a minimal, hand-rolled client for the OpenAI-compatible

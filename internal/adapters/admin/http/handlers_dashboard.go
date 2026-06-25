@@ -5,9 +5,9 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/matjam/faultline/internal/agent"
-	"github.com/matjam/faultline/internal/subagent"
-	"github.com/matjam/faultline/internal/tools"
+	"github.com/CamiloValderruten/faultline/internal/agent"
+	"github.com/CamiloValderruten/faultline/internal/subagent"
+	"github.com/CamiloValderruten/faultline/internal/tools"
 )
 
 // templateFuncs returns the FuncMap shared by every template the

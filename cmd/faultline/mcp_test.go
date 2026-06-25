@@ -13,8 +13,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/matjam/faultline/internal/adapters/mcp"
-	"github.com/matjam/faultline/internal/config"
+	"github.com/CamiloValderruten/faultline/internal/adapters/mcp"
+	"github.com/CamiloValderruten/faultline/internal/config"
 )
 
 func TestSetupMCPDisabled(t *testing.T) {
