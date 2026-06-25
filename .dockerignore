@@ -1,0 +1,16 @@
+# Build artifacts
+faultline
+dist/
+.github/
+.vscode/
+
+# Runtime (not needed for build)
+memory/
+sandbox/
+logs/
+state.json
+config.toml
+
+# OS / dotfiles
+.DS_Store
+*.swp

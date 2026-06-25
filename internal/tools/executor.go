@@ -29,6 +29,7 @@ import (
 	skillsfs "github.com/matjam/faultline/internal/adapters/skills/fs"
 	"github.com/matjam/faultline/internal/config"
 	"github.com/matjam/faultline/internal/llm"
+	"github.com/matjam/faultline/internal/schedule"
 	"github.com/matjam/faultline/internal/search/bm25"
 	"github.com/matjam/faultline/internal/search/vector"
 	"github.com/matjam/faultline/internal/subagent"
@@ -123,6 +124,9 @@ var subagentForbidden = map[string]struct{}{
 	"mcp_restart_stdio_server":  {},
 	"mcp_propose_config_update": {},
 	"mcp_update_config":         {},
+	"schedule_task":             {},
+	"list_scheduled_tasks":      {},
+	"cancel_scheduled_task":     {},
 	"subagent_run":              {},
 	"subagent_spawn":            {},
 	"subagent_wait":             {},
@@ -560,6 +564,79 @@ func (te *Executor) ToolDefs() []llm.Tool {
 					Parameters: map[string]interface{}{
 						"type":       "object",
 						"properties": map[string]interface{}{},
+					},
+				},
+			},
+		)
+	}
+
+	if te.scheduler != nil {
+		tools = append(tools,
+			llm.Tool{
+				Type: llm.ToolTypeFunction,
+				Function: &llm.FunctionDef{
+					Name:        "schedule_task",
+					Description: "Schedule a future prompt to be injected back into your normal conversation loop. This does not execute stored tool calls directly. Pass kind='once' with run_at, or kind='cron' with cron. Cron uses standard 5-field syntax: minute hour day-of-month month day-of-week.",
+					Parameters: map[string]interface{}{
+						"type": "object",
+						"properties": map[string]interface{}{
+							"kind": map[string]interface{}{
+								"type":        "string",
+								"enum":        []string{"once", "cron"},
+								"description": "Schedule kind. Use 'once' for a one-shot task or 'cron' for a recurring cron task.",
+							},
+							"title": map[string]interface{}{
+								"type":        "string",
+								"description": "Short human-readable title for this scheduled task.",
+							},
+							"prompt": map[string]interface{}{
+								"type":        "string",
+								"description": "Prompt to inject when the task is due.",
+							},
+							"run_at": map[string]interface{}{
+								"type":        "string",
+								"description": "RFC3339 timestamp for a one-shot task, e.g. 2026-05-04T12:00:00Z. Required for kind='once'.",
+							},
+							"cron": map[string]interface{}{
+								"type":        "string",
+								"description": "Five-field cron expression for kind='cron', e.g. '*/15 * * * *'.",
+							},
+						},
+						"required": []string{"kind", "title", "prompt"},
+					},
+				},
+			},
+			llm.Tool{
+				Type: llm.ToolTypeFunction,
+				Function: &llm.FunctionDef{
+					Name:        "list_scheduled_tasks",
+					Description: "List scheduled tasks as JSON. Optionally filter by status: active, delivered, or cancelled.",
+					Parameters: map[string]interface{}{
+						"type": "object",
+						"properties": map[string]interface{}{
+							"status": map[string]interface{}{
+								"type":        "string",
+								"enum":        []string{"active", "delivered", "cancelled"},
+								"description": "Optional status filter.",
+							},
+						},
+					},
+				},
+			},
+			llm.Tool{
+				Type: llm.ToolTypeFunction,
+				Function: &llm.FunctionDef{
+					Name:        "cancel_scheduled_task",
+					Description: "Cancel a pending scheduled task by task_id.",
+					Parameters: map[string]interface{}{
+						"type": "object",
+						"properties": map[string]interface{}{
+							"task_id": map[string]interface{}{
+								"type":        "string",
+								"description": "ID of the scheduled task to cancel.",
+							},
+						},
+						"required": []string{"task_id"},
 					},
 				},
 			},
@@ -1013,6 +1090,7 @@ type Executor struct {
 	mcpApprovalNotifier func(string) error
 	mcpReload           func(context.Context) (mcp.Caller, []mcp.DiscoveredServer, error)
 	mcpOAuth            *mcp.OAuthManager
+	scheduler           *schedule.Store
 	retiredMCPCallers   []mcp.Caller
 	logger              *slog.Logger
 	http                *http.Client
@@ -1073,6 +1151,7 @@ type Deps struct {
 	MCPApprovalNotifier  func(string) error
 	MCPReload            func(context.Context) (mcp.Caller, []mcp.DiscoveredServer, error)
 	MCPOAuth             *mcp.OAuthManager
+	Scheduler            *schedule.Store
 	Logger               *slog.Logger
 	WebCache             *WebCache
 	MaxTokens            int
@@ -1151,6 +1230,7 @@ func New(deps Deps) *Executor {
 		mcpApprovalNotifier: deps.MCPApprovalNotifier,
 		mcpReload:           deps.MCPReload,
 		mcpOAuth:            deps.MCPOAuth,
+		scheduler:           deps.Scheduler,
 		logger:              deps.Logger,
 		maxTokens:           deps.MaxTokens,
 		limits:              deps.Limits,
@@ -1302,6 +1382,12 @@ func (te *Executor) dispatch(ctx context.Context, call llm.ToolCall) string {
 		return time.Now().Format("Monday, January 2, 2006 3:04:05 PM MST")
 	case "sleep":
 		return te.sleep(ctx, args)
+	case "schedule_task":
+		return te.scheduleTask(args)
+	case "list_scheduled_tasks":
+		return te.listScheduledTasks(args)
+	case "cancel_scheduled_task":
+		return te.cancelScheduledTask(args)
 	case "get_version":
 		return te.getVersion()
 	case "rebuild_indexes":
@@ -2934,6 +3020,89 @@ func (te *Executor) sleep(ctx context.Context, argsJSON string) string {
 			}
 		}
 	}
+}
+
+func (te *Executor) scheduleTask(argsJSON string) string {
+	if te.scheduler == nil {
+		return "Scheduled tasks are not configured."
+	}
+	var args struct {
+		Kind   string `json:"kind"`
+		Title  string `json:"title"`
+		Prompt string `json:"prompt"`
+		RunAt  string `json:"run_at"`
+		Cron   string `json:"cron"`
+	}
+	if err := json.Unmarshal([]byte(argsJSON), &args); err != nil {
+		return fmt.Sprintf("Error parsing arguments: %s", err)
+	}
+	hasRunAt := strings.TrimSpace(args.RunAt) != ""
+	hasCron := strings.TrimSpace(args.Cron) != ""
+	if hasRunAt == hasCron {
+		return "Error: schedule_task requires exactly one of run_at or cron."
+	}
+
+	req := schedule.CreateRequest{
+		Kind:   schedule.Kind(args.Kind),
+		Title:  args.Title,
+		Prompt: args.Prompt,
+		Cron:   args.Cron,
+	}
+	if hasRunAt {
+		runAt, err := time.Parse(time.RFC3339, args.RunAt)
+		if err != nil {
+			return fmt.Sprintf("Error: run_at must be an RFC3339 timestamp: %s", err)
+		}
+		req.RunAt = runAt
+	}
+	task, err := te.scheduler.Schedule(req)
+	if err != nil {
+		return fmt.Sprintf("Error: %s", err)
+	}
+	return fmt.Sprintf("Scheduled task %s (%s) with next run at %s.", task.ID, task.Title, task.NextRunAt.Format(time.RFC3339))
+}
+
+func (te *Executor) listScheduledTasks(argsJSON string) string {
+	if te.scheduler == nil {
+		return "Scheduled tasks are not configured."
+	}
+	var args struct {
+		Status string `json:"status"`
+	}
+	if strings.TrimSpace(argsJSON) != "" {
+		if err := json.Unmarshal([]byte(argsJSON), &args); err != nil {
+			return fmt.Sprintf("Error parsing arguments: %s", err)
+		}
+	}
+	tasks, err := te.scheduler.List(args.Status)
+	if err != nil {
+		return fmt.Sprintf("Error: %s", err)
+	}
+	data, err := json.MarshalIndent(tasks, "", "  ")
+	if err != nil {
+		return fmt.Sprintf("Error: %s", err)
+	}
+	return string(data)
+}
+
+func (te *Executor) cancelScheduledTask(argsJSON string) string {
+	if te.scheduler == nil {
+		return "Scheduled tasks are not configured."
+	}
+	var args struct {
+		TaskID string `json:"task_id"`
+	}
+	if err := json.Unmarshal([]byte(argsJSON), &args); err != nil {
+		return fmt.Sprintf("Error parsing arguments: %s", err)
+	}
+	args.TaskID = strings.TrimSpace(args.TaskID)
+	if args.TaskID == "" {
+		return "Error: task_id is required."
+	}
+	if err := te.scheduler.Cancel(args.TaskID); err != nil {
+		return fmt.Sprintf("Error: %s", err)
+	}
+	return fmt.Sprintf("Cancelled scheduled task %s.", args.TaskID)
 }
 
 // getVersion returns the running binary's version metadata.

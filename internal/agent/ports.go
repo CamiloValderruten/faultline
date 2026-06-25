@@ -2,9 +2,11 @@ package agent
 
 import (
 	"context"
+	"time"
 
 	"github.com/matjam/faultline/internal/adapters/llm/kobold"
 	"github.com/matjam/faultline/internal/llm"
+	"github.com/matjam/faultline/internal/schedule"
 	"github.com/matjam/faultline/internal/search/bm25"
 	"github.com/matjam/faultline/internal/skills"
 	"github.com/matjam/faultline/internal/subagent"
@@ -82,6 +84,13 @@ type Tools interface {
 type StateStore interface {
 	Save(messages []llm.Message, idleStreak int) error
 	Load() ([]llm.Message, int, error)
+}
+
+// Scheduler is the delayed self-message inbox. Due marks due tasks as
+// delivered/rescheduled before returning them so a restart cannot replay the
+// same one-shot task.
+type Scheduler interface {
+	Due(now time.Time) ([]schedule.Task, error)
 }
 
 // Skills is the catalog port for Agent Skills support

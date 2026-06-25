@@ -112,6 +112,10 @@ type AgentConfig struct {
 	// across restarts; only the conversation history is preserved.
 	// Empty string disables persistence (legacy behavior).
 	StateFile string `toml:"state_file"`
+
+	// ScheduledTasksFile is the durable queue for prompts scheduled by
+	// schedule_task. Empty string disables scheduled-task tools.
+	ScheduledTasksFile string `toml:"scheduled_tasks_file"`
 }
 
 // TelegramConfig holds optional Telegram bot settings.
@@ -513,6 +517,7 @@ func Default() *Config {
 			MaxRespTokens:       4096,
 			CompactionThreshold: 150000,
 			MaxSleep:            duration(15 * time.Minute),
+			ScheduledTasksFile:  "./scheduled-tasks.json",
 		},
 		Log: LogConfig{
 			Level: "info",

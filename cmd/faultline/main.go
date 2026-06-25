@@ -31,6 +31,7 @@ import (
 	"github.com/matjam/faultline/internal/config"
 	"github.com/matjam/faultline/internal/log"
 	"github.com/matjam/faultline/internal/prompts"
+	"github.com/matjam/faultline/internal/schedule"
 	"github.com/matjam/faultline/internal/search/bm25"
 	"github.com/matjam/faultline/internal/search/vector"
 	"github.com/matjam/faultline/internal/subagent"
@@ -318,6 +319,11 @@ func main() {
 	webCache := tools.NewWebCache(60 * time.Second)
 	defer webCache.Close()
 
+	var scheduler *schedule.Store
+	if cfg.Agent.ScheduledTasksFile != "" {
+		scheduler = schedule.NewStore(cfg.Agent.ScheduledTasksFile)
+	}
+
 	// Subagent manager (optional). Constructed before the primary's
 	// tool executor so the SubagentManager pointer can be wired in;
 	// the spawnFn closure shares the primary's adapters.
@@ -384,6 +390,7 @@ func main() {
 			return setupMCP(ctx, cfg.MCP, oauthManager, sandboxMCPStdioRunner{sandbox: sb}, logger)
 		},
 		MCPOAuth:        oauthManager,
+		Scheduler:       scheduler,
 		Logger:          logger,
 		WebCache:        webCache,
 		MaxTokens:       cfg.Agent.MaxTokens,
@@ -429,6 +436,7 @@ func main() {
 		State:     state,
 		Skills:    skillsPort,
 		Subagents: subagentsPort,
+		Scheduler: scheduler,
 	}, logger)
 	defer a.Close()
 

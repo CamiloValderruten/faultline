@@ -1,0 +1,34 @@
+services:
+  coco:
+    build: .
+    image: faultline:latest
+    container_name: faultline-coco
+    user: "${PUID:-1000}:${PGID:-1003}"
+    command: ["-config", "/config/config.toml"]
+    stop_grace_period: 3m
+    group_add:
+      - "${DOCKER_GID:-986}"
+    volumes:
+      - /home/camilovalderruten/faultline/coco.config.toml:/config/config.toml:ro
+      - /home/camilovalderruten/.faultline/agents/coco:/agent:rw
+      - /home/camilovalderruten/.faultline/agents/coco/sandbox:/home/camilovalderruten/.faultline/agents/coco/sandbox:rw
+      - /var/run/docker.sock:/var/run/docker.sock
+    restart: unless-stopped
+
+  arlo:
+    build: .
+    image: faultline:latest
+    container_name: faultline-arlo
+    user: "${PUID:-1000}:${PGID:-1003}"
+    command: ["-config", "/config/config.toml"]
+    stop_grace_period: 3m
+    ports:
+      - "8710:8710"
+    group_add:
+      - "${DOCKER_GID:-986}"
+    volumes:
+      - /home/camilovalderruten/faultline/arlo.config.toml:/config/config.toml:ro
+      - /home/camilovalderruten/.faultline/agents/arlo:/agent:rw
+      - /home/camilovalderruten/.faultline/agents/arlo/sandbox:/home/camilovalderruten/.faultline/agents/arlo/sandbox:rw
+      - /var/run/docker.sock:/var/run/docker.sock
+    restart: unless-stopped

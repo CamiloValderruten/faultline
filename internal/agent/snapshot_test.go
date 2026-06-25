@@ -2,6 +2,8 @@ package agent
 
 import (
 	"errors"
+	"io"
+	"log/slog"
 	"sync"
 	"testing"
 	"time"
@@ -19,6 +21,7 @@ func newTestAgent() *Agent {
 	cfg.Agent.CompactionThreshold = 80000
 	a := &Agent{
 		cfg:       cfg,
+		logger:    slog.New(slog.NewTextHandler(io.Discard, nil)),
 		inspector: newInspectorState(time.Now()),
 	}
 	return a

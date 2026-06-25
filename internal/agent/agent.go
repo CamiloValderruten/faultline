@@ -18,6 +18,7 @@ import (
 	"github.com/matjam/faultline/internal/config"
 	"github.com/matjam/faultline/internal/llm"
 	prompt "github.com/matjam/faultline/internal/prompts"
+	"github.com/matjam/faultline/internal/schedule"
 	"github.com/matjam/faultline/internal/search/bm25"
 	skillsdomain "github.com/matjam/faultline/internal/skills"
 	"github.com/matjam/faultline/internal/subagent"
@@ -35,6 +36,7 @@ type Agent struct {
 	state                StateStore
 	skills               Skills    // nil when skills support is disabled
 	subagents            Subagents // nil for primaries with [subagent] off and for all children
+	scheduler            Scheduler // nil when scheduled tasks are disabled
 	logger               *slog.Logger
 	maxTurns             int    // 0 means unlimited; >0 caps Run loop iterations (subagent use)
 	systemPromptOverride string // when non-empty, replaces prompts["system"] (subagent use)
@@ -64,6 +66,7 @@ type Deps struct {
 	State     StateStore
 	Skills    Skills    // optional
 	Subagents Subagents // optional; primary only
+	Scheduler Scheduler // optional; primary only
 
 	// MaxTurns caps the Run loop's iteration count. Zero means
 	// unlimited (the normal primary case). Used by subagents to
@@ -95,6 +98,7 @@ func New(cfg *config.Config, deps Deps, logger *slog.Logger) *Agent {
 		state:                deps.State,
 		skills:               deps.Skills,
 		subagents:            deps.Subagents,
+		scheduler:            deps.Scheduler,
 		logger:               logger,
 		maxTurns:             deps.MaxTurns,
 		systemPromptOverride: deps.SystemPromptOverride,
@@ -527,42 +531,39 @@ func (a *Agent) Run(ctx context.Context, shutdownCh <-chan struct{}) error {
 		// a sudden spike means the KV cache was invalidated.
 		a.logBackendPerf()
 
-		// Drain any messages that arrived while the LLM was generating
-		// -- both operator (collaborator) messages and subagent reports.
-		// We will handle them at the next available opportunity rather
-		// than mid-generation.
+		// Drain collaborator messages that arrived while the LLM was
+		// generating. Collaborator input is interrupting: it may change
+		// what the agent should do before running tool calls it selected
+		// before seeing that input.
+		//
+		// Scheduled tasks and subagent reports are intentionally not
+		// drained here. They are agent-created background work, so they
+		// should not preempt an already-selected tool turn; the top of the
+		// next loop iteration will inject them at a clean boundary.
 		var pendingOp []string
 		if a.operator != nil {
 			pendingOp = a.operator.Pending()
 		}
-		var pendingSub []subagent.Report
-		if a.subagents != nil {
-			pendingSub = a.subagents.Pending()
-		}
-		hasPending := len(pendingOp)+len(pendingSub) > 0
+		hasPending := len(pendingOp) > 0
 
 		switch {
 		case len(msg.ToolCalls) > 0 && hasPending:
-			// New input arrived while the model wanted to use tools.
+			// New collaborator input arrived while the model wanted to use tools.
 			// Defer the tool calls: every tool_call_id must still
 			// have a matching tool response or the next API call will
 			// fail, so we emit a "deferred" stub for each, then
 			// surface the new input. The agent can read it and decide
 			// whether the deferred actions are still appropriate.
-			a.logger.Info("incoming messages arrived during generation; deferring tool calls",
+			a.logger.Info("collaborator message arrived during generation; deferring tool calls",
 				"tool_calls", len(msg.ToolCalls),
 				"operator_pending", len(pendingOp),
-				"subagent_pending", len(pendingSub),
 			)
-			const deferredBody = "[Deferred] An incoming message (collaborator turn or subagent report) arrived before this tool call could run. Read it below and respond first. After responding, re-issue this tool call if it still makes sense, or move on if the new input changes your plan."
+			const deferredBody = "[Deferred] A collaborator message arrived before this tool call could run. Read it below and respond first. After responding, re-issue this tool call if it still makes sense, or move on if the new input changes your plan."
 			for _, tc := range msg.ToolCalls {
 				messages = append(messages, toolMessage(tc.ID, deferredBody))
 			}
 			if len(pendingOp) > 0 {
 				messages = a.appendCollaboratorMessages(messages, pendingOp)
-			}
-			if len(pendingSub) > 0 {
-				messages = a.appendSubagentReports(messages, pendingSub)
 			}
 			// Tool calls + new input both count as the model engaging.
 			idleStreak = 0
@@ -583,14 +584,11 @@ func (a *Agent) Run(ctx context.Context, shutdownCh <-chan struct{}) error {
 			idleStreak = 0
 
 		case hasPending:
-			// Text-only response with new input waiting: surface it in
+			// Text-only response with collaborator input waiting: surface it in
 			// place of the continue prompt so the next turn addresses
 			// the new input naturally. Resets the idle counter.
 			if len(pendingOp) > 0 {
 				messages = a.appendCollaboratorMessages(messages, pendingOp)
-			}
-			if len(pendingSub) > 0 {
-				messages = a.appendSubagentReports(messages, pendingSub)
 			}
 			idleStreak = 0
 
@@ -887,8 +885,9 @@ func (a *Agent) injectPendingMessages(messages []llm.Message) ([]llm.Message, bo
 	if a.subagents != nil {
 		pendingSub = a.subagents.Pending()
 	}
+	pendingScheduled := a.dueScheduledTasks()
 
-	if len(pendingOp) == 0 && len(pendingSub) == 0 {
+	if len(pendingOp) == 0 && len(pendingSub) == 0 && len(pendingScheduled) == 0 {
 		return messages, false
 	}
 
@@ -898,7 +897,22 @@ func (a *Agent) injectPendingMessages(messages []llm.Message) ([]llm.Message, bo
 	if len(pendingSub) > 0 {
 		messages = a.appendSubagentReports(messages, pendingSub)
 	}
+	if len(pendingScheduled) > 0 {
+		messages = a.appendScheduledTasks(messages, pendingScheduled)
+	}
 	return messages, true
+}
+
+func (a *Agent) dueScheduledTasks() []schedule.Task {
+	if a.scheduler == nil {
+		return nil
+	}
+	tasks, err := a.scheduler.Due(time.Now())
+	if err != nil {
+		a.logger.Error("scheduled task drain failed", "error", err)
+		return nil
+	}
+	return tasks
 }
 
 // appendCollaboratorMessages formats each collaborator message as a user
@@ -963,6 +977,22 @@ func (a *Agent) appendSubagentReports(messages []llm.Message, reports []subagent
 		messages = append(messages, llm.Message{
 			Role:    llm.RoleUser,
 			Content: b.String(),
+		})
+	}
+	return messages
+}
+
+func (a *Agent) appendScheduledTasks(messages []llm.Message, tasks []schedule.Task) []llm.Message {
+	for _, task := range tasks {
+		a.logger.Info("injecting scheduled task into conversation",
+			"task_id", task.ID,
+			"kind", task.Kind,
+			"title", task.Title,
+		)
+		messages = append(messages, llm.Message{
+			Role: llm.RoleUser,
+			Content: fmt.Sprintf("[Scheduled task - %s, task_id=%s, kind=%s, title=%s]\n\nThis is a scheduled task you created earlier. It is not a collaborator message.\n\nScheduled prompt:\n%s",
+				time.Now().Format(time.RFC1123), task.ID, task.Kind, task.Title, task.Prompt),
 		})
 	}
 	return messages

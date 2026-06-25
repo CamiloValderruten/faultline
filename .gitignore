@@ -2,3 +2,10 @@
 # doesn't also swallow the cmd/faultline/ source directory or any
 # future "faultline" file/directory deeper in the tree.
 /faultline
+
+# Local deployment configs (may contain secrets)
+config.toml
+*.config.toml
+mcp.json
+oauth-tokens.json
+scheduled-tasks.json

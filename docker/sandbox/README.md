@@ -15,6 +15,10 @@ Languages and package managers:
 - Bun
 - Deno
 - Go
+- Common browser shared libraries (`libatk`, `libxcomposite`, `libxdamage`,
+  GTK, NSS, GBM, etc.) for Playwright/Puppeteer-managed browsers.
+  Chromium itself is intentionally not installed by default to keep the image
+  smaller.
 
 CLI tools the agent tends to reach for:
 
@@ -22,9 +26,9 @@ CLI tools the agent tends to reach for:
 - `jq`, `ripgrep`, `fd`, `less`, `tree`, `which`
 - `tar`, `gzip`, `unzip`, `zip`, `gnu-netcat`, `make`, `diffutils`, `patch`
 
-Base: `archlinux:base-devel` (rolling). Each image rebuild picks up
-current versions of the runtimes; the *published* image is the
-reproducible artifact, not the Dockerfile inputs.
+Base: `debian:bookworm-slim`. Each image rebuild picks up current Debian
+package versions; the *published* image is the reproducible artifact, not
+the Dockerfile inputs.
 
 ## Contracts the Go side relies on
 
@@ -71,6 +75,7 @@ docker run --rm faultline-sandbox:dev bash -c '
   curl --version | head -1
   jq --version
   rg --version | head -1
+  dpkg-query -W libatk-bridge2.0-0 libxcomposite1 libxdamage1 libgtk-3-0 libnss3 libgbm1
 '
 ```
 
@@ -89,13 +94,11 @@ The `config.Default()` shipped with the binary points at `:latest`. Pin
 to a versioned tag in your `config.toml` if you want a specific image
 version locked down.
 
-## Why Arch
+## Why Debian
 
-1. **Rolling toolchains.** Each rebuild picks up current node, go,
-   python, deno without a separate version-pinning treadmill.
-2. **`pacman` is a clean superset of what we need.** All system tools
-   and most runtimes (deno included) are in the official repos; only
-   `uv` and `bun` come from upstream installers.
-3. **No accidental Debian-isms.** The previous default
-   (`ghcr.io/astral-sh/uv:python3.12-bookworm-slim`) was Debian-flavoured
-   and Python-only. Arch makes the multi-runtime intent obvious.
+1. **Multi-arch availability.** Debian bookworm publishes both amd64 and
+   arm64 images, matching the published sandbox targets.
+2. **Browser dependencies are straightforward.** The shared libraries needed
+   by browser automation are available from official Debian repositories.
+3. **Published image as artifact.** Package versions are intentionally not
+   pinned individually; the pushed image tag is the reproducible unit.

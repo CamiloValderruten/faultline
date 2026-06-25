@@ -53,6 +53,11 @@ max_response_tokens = 4096
 # and memories on load. Empty string disables persistence.
 state_file = "./state.json"
 
+# Path to the durable queue used by schedule_task. Due tasks are injected back
+# into the normal agent loop as scheduled self-prompts, not executed directly.
+# Empty string disables scheduled-task tools.
+scheduled_tasks_file = "./scheduled-tasks.json"
+
 # Upper bound enforced by the `sleep` tool. The agent can request shorter
 # sleeps; longer ones are clamped to this value. Operator messages and
 # forced shutdown still interrupt mid-sleep regardless of this setting.
