@@ -201,6 +201,9 @@ func main() {
 	var voiceOut interface {
 		SendVoice(text string) error
 	}
+	var fileOut interface {
+		SendFile(path, filename, caption string) error
+	}
 	var dgSpeech *deepgram.Client
 	if cfg.Deepgram.Enabled() {
 		var err error
@@ -287,6 +290,9 @@ func main() {
 		}()
 		operator = dc
 		messenger = dc
+		if sb != nil {
+			fileOut = dc
+		}
 	default:
 		logger.Info("no collaborator channel configured (telegram/discord), messaging disabled")
 	}
@@ -455,6 +461,7 @@ func main() {
 		VectorIndex:          vIndex,
 		Messenger:            messenger,
 		Voice:                voiceOut,
+		Files:                fileOut,
 		Sandbox:              sb,
 		Email:                email,
 		Kobold:               kb,

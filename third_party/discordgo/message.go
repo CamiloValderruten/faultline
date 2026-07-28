@@ -253,6 +253,9 @@ type MessageSend struct {
 	StickerIDs      []string                `json:"sticker_ids"`
 	Flags           MessageFlags            `json:"flags,omitempty"`
 	Poll            *Poll                   `json:"poll,omitempty"`
+	// Attachments metadata for multipart uploads (e.g. voice-message
+	// duration_secs / waveform keyed by files[] index id).
+	Attachments []*MessageAttachment `json:"attachments,omitempty"`
 
 	// TODO: Remove this when compatibility is not required.
 	File *File `json:"-"`
@@ -361,9 +364,12 @@ type MessageAttachment struct {
 	Height       int                    `json:"height"`
 	Size         int                    `json:"size"`
 	Ephemeral    bool                   `json:"ephemeral"`
-	DurationSecs float64                `json:"duration_secs"`
-	Waveform     string                 `json:"waveform"`
+	DurationSecs float64                `json:"duration_secs,omitempty"`
+	Waveform     string                 `json:"waveform,omitempty"`
 	Flags        MessageAttachmentFlags `json:"flags"`
+	// UploadedFilename is used with the channel attachments upload API
+	// (voice messages). Not set for ordinary multipart files[] sends.
+	UploadedFilename string `json:"uploaded_filename,omitempty"`
 }
 
 // MessageAttachmentFlags is the flags of a message attachment.

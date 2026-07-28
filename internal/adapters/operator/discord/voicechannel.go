@@ -604,27 +604,36 @@ func (b *Bot) SendVoice(text string) error {
 		return nil
 	}
 
+	oggSp, ok := b.speech.(oggSpeaker)
+	if !ok {
+		return fmt.Errorf("discord voice messages require Ogg/Opus (SpeakOggOpus) support")
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 	defer cancel()
-	audio, contentType, err := b.speech.Speak(ctx, spoken)
+	ogg, err := oggSp.SpeakOggOpus(ctx, spoken)
 	if err != nil {
-		return fmt.Errorf("tts: %w", err)
-	}
-	name := "reply.mp3"
-	if !strings.Contains(contentType, "mpeg") && !strings.Contains(contentType, "mp3") {
-		name = "reply.audio"
+		return fmt.Errorf("tts ogg: %w", err)
 	}
 
-	b.logger.Info("sending voice reply as chat attachment", "bytes", len(audio), "chars", len(spoken))
+	duration := oggOpusDurationSecs(ogg)
+	waveform := waveformFromBytes(ogg)
+	b.logger.Info("sending discord voice message", "bytes", len(ogg), "chars", len(spoken), "duration_s", duration)
 	_, err = b.session.ChannelMessageSendComplex(b.channelID, &discordgo.MessageSend{
+		Flags: discordgo.MessageFlagsIsVoiceMessage,
 		Files: []*discordgo.File{{
-			Name:        name,
-			ContentType: contentType,
-			Reader:      bytes.NewReader(audio),
+			Name:        "voice-message.ogg",
+			ContentType: "audio/ogg",
+			Reader:      bytes.NewReader(ogg),
+		}},
+		Attachments: []*discordgo.MessageAttachment{{
+			ID:           "0",
+			Filename:     "voice-message.ogg",
+			DurationSecs: duration,
+			Waveform:     waveform,
 		}},
 	})
 	if err != nil {
-		return fmt.Errorf("send discord voice: %w", err)
+		return fmt.Errorf("send discord voice message: %w", err)
 	}
 	return nil
 }

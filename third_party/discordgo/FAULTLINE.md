@@ -11,6 +11,8 @@ Local patches (see voice.go / dave.go):
 - VOICE_SERVER_UPDATE is coalesced briefly so Discord's common double
   update does not cancel a half-open UDP/websocket handshake.
 - Close 4006 surfaces as ErrVoiceSessionInvalid.
+- MessageSend.Attachments supports voice-message duration_secs / waveform
+  metadata on multipart uploads.
 
 Do not bump this tree to a newer upstream without re-validating DAVE
 join on a live Discord voice channel.

@@ -5,13 +5,19 @@ package discord
 import (
 	"context"
 	"fmt"
+	"io"
 	"log/slog"
+	"mime"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 
 	"github.com/CamiloValderruten/faultline/internal/messaging"
 	"github.com/bwmarrin/discordgo"
 )
+
+const maxOutboundFileBytes = 25 << 20 // Discord boost-dependent; hard cap 25 MiB
 
 // Bot is a Discord bot for bidirectional collaborator communication.
 type Bot struct {
@@ -24,6 +30,10 @@ type Bot struct {
 
 	mu      sync.Mutex
 	pending []string
+
+	// buttonData → modal declared on send; opened within the 3s interaction window.
+	modalsMu sync.Mutex
+	modals   map[string]messaging.ModalSpec
 
 	// Live voice channel (optional).
 	voiceMu           sync.Mutex
@@ -52,6 +62,9 @@ func New(token, channelID string, logger *slog.Logger) (*Bot, error) {
 	if err != nil {
 		return nil, fmt.Errorf("create discord session: %w", err)
 	}
+	// Surface voice/DAVE handshake progress (Welcome, key package, close codes)
+	// into docker logs while live voice is still stabilizing.
+	session.LogLevel = discordgo.LogInformational
 	session.Identify.Intents = discordgo.IntentGuilds |
 		discordgo.IntentGuildMessages |
 		discordgo.IntentDirectMessages |
@@ -61,6 +74,7 @@ func New(token, channelID string, logger *slog.Logger) (*Bot, error) {
 		session:   session,
 		channelID: channelID,
 		logger:    logger,
+		modals:    map[string]messaging.ModalSpec{},
 	}
 	session.AddHandler(b.onMessageCreate)
 	session.AddHandler(b.onInteractionCreate)
@@ -110,22 +124,54 @@ func (b *Bot) onInteractionCreate(s *discordgo.Session, i *discordgo.Interaction
 	if i == nil || i.Interaction == nil {
 		return
 	}
-	if i.Type != discordgo.InteractionMessageComponent {
-		return
-	}
-	data := i.MessageComponentData()
-	channelID := ""
-	if i.ChannelID != "" {
-		channelID = i.ChannelID
-	} else if i.Message != nil {
-		channelID = i.Message.ChannelID
-	}
+
+	channelID := interactionChannelID(i)
 	if channelID != b.channelID {
-		b.logger.Warn("ignoring interaction from unknown channel", "channel_id", channelID)
-		_ = s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
-			Type: discordgo.InteractionResponseDeferredMessageUpdate,
-		})
+		b.logger.Warn("ignoring interaction from unknown channel", "channel_id", channelID, "type", i.Type)
+		if i.Type == discordgo.InteractionMessageComponent || i.Type == discordgo.InteractionModalSubmit {
+			_ = s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+				Type: discordgo.InteractionResponseDeferredMessageUpdate,
+			})
+		}
 		return
+	}
+
+	switch i.Type {
+	case discordgo.InteractionMessageComponent:
+		b.handleComponentInteraction(s, i)
+	case discordgo.InteractionModalSubmit:
+		b.handleModalSubmit(s, i)
+	}
+}
+
+func interactionChannelID(i *discordgo.InteractionCreate) string {
+	if i.ChannelID != "" {
+		return i.ChannelID
+	}
+	if i.Message != nil {
+		return i.Message.ChannelID
+	}
+	return ""
+}
+
+func (b *Bot) handleComponentInteraction(s *discordgo.Session, i *discordgo.InteractionCreate) {
+	data := i.MessageComponentData()
+
+	if data.ComponentType == discordgo.ButtonComponent {
+		if spec, ok := b.lookupModal(strings.TrimSpace(data.CustomID)); ok {
+			resp, err := modalResponse(spec)
+			if err != nil {
+				b.logger.Error("build modal response failed", "error", err)
+				_ = s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+					Type: discordgo.InteractionResponseDeferredMessageUpdate,
+				})
+				return
+			}
+			if err := s.InteractionRespond(i.Interaction, resp); err != nil {
+				b.logger.Debug("modal respond failed", "error", err)
+			}
+			return
+		}
 	}
 
 	pending := formatComponentPending(data)
@@ -154,6 +200,41 @@ func (b *Bot) onInteractionCreate(s *discordgo.Session, i *discordgo.Interaction
 	}
 }
 
+func (b *Bot) handleModalSubmit(s *discordgo.Session, i *discordgo.InteractionCreate) {
+	data := i.ModalSubmitData()
+	pending := formatModalPending(data)
+	b.logger.Info("received modal submit from collaborator", "text", pending)
+	b.enqueue(pending)
+
+	if err := s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+		Type: discordgo.InteractionResponseChannelMessageWithSource,
+		Data: &discordgo.InteractionResponseData{
+			Content: "Got it — thanks.",
+			Flags:   discordgo.MessageFlagsEphemeral,
+		},
+	}); err != nil {
+		b.logger.Debug("modal submit respond failed", "error", err)
+	}
+}
+
+func (b *Bot) lookupModal(buttonData string) (messaging.ModalSpec, bool) {
+	b.modalsMu.Lock()
+	defer b.modalsMu.Unlock()
+	spec, ok := b.modals[buttonData]
+	return spec, ok
+}
+
+func (b *Bot) registerModals(modals map[string]messaging.ModalSpec) {
+	if len(modals) == 0 {
+		return
+	}
+	b.modalsMu.Lock()
+	defer b.modalsMu.Unlock()
+	for k, v := range modals {
+		b.modals[k] = v
+	}
+}
+
 func formatComponentPending(data discordgo.MessageComponentInteractionData) string {
 	id := strings.TrimSpace(data.CustomID)
 	switch data.ComponentType {
@@ -164,6 +245,10 @@ func formatComponentPending(data discordgo.MessageComponentInteractionData) stri
 		if len(vals) == 0 {
 			return fmt.Sprintf("Selected menu %q (no values)", id)
 		}
+		labels := resolveSelectLabels(data)
+		if labels != "" {
+			return fmt.Sprintf("Selected menu %q (values=%s; %s)", id, strings.Join(vals, ","), labels)
+		}
 		return fmt.Sprintf("Selected menu %q (values=%s)", id, strings.Join(vals, ","))
 	default:
 		if id == "" {
@@ -171,6 +256,25 @@ func formatComponentPending(data discordgo.MessageComponentInteractionData) stri
 		}
 		return fmt.Sprintf("Pressed button %q (data=%s)", id, id)
 	}
+}
+
+func resolveSelectLabels(data discordgo.MessageComponentInteractionData) string {
+	var parts []string
+	for _, id := range data.Values {
+		if u, ok := data.Resolved.Users[id]; ok && u != nil {
+			parts = append(parts, fmt.Sprintf("%s=@%s", id, u.Username))
+			continue
+		}
+		if r, ok := data.Resolved.Roles[id]; ok && r != nil {
+			parts = append(parts, fmt.Sprintf("%s=@%s", id, r.Name))
+			continue
+		}
+		if c, ok := data.Resolved.Channels[id]; ok && c != nil {
+			parts = append(parts, fmt.Sprintf("%s=#%s", id, c.Name))
+			continue
+		}
+	}
+	return strings.Join(parts, ", ")
 }
 
 func (b *Bot) inboundText(msg *discordgo.Message) (string, bool) {
@@ -217,6 +321,13 @@ func (b *Bot) HasPending() bool {
 	return len(b.pending) > 0
 }
 
+// Typing broadcasts the Discord "is typing…" indicator in the configured channel.
+func (b *Bot) Typing() {
+	if err := b.session.ChannelTyping(b.channelID); err != nil {
+		b.logger.Debug("discord typing failed", "error", err)
+	}
+}
+
 // Send sends a plain text message (Discord markdown supported).
 func (b *Bot) Send(text string) error {
 	text = strings.TrimSpace(text)
@@ -236,7 +347,7 @@ func (b *Bot) SendWithButtons(text string, buttons [][]messaging.Button) error {
 	if text == "" {
 		return fmt.Errorf("text is required when sending buttons")
 	}
-	components, err := buildComponents(buttons, nil)
+	components, modals, err := buildComponents(buttons, nil)
 	if err != nil {
 		return err
 	}
@@ -247,12 +358,13 @@ func (b *Bot) SendWithButtons(text string, buttons [][]messaging.Button) error {
 	if err != nil {
 		return fmt.Errorf("send discord message with buttons: %w", err)
 	}
+	b.registerModals(modals)
 	return nil
 }
 
 // SendRich sends an embed (title/content/fields/color) plus optional components.
 func (b *Bot) SendRich(msg messaging.RichMessage) error {
-	components, err := buildComponents(msg.Buttons, msg.Selects)
+	components, modals, err := buildComponents(msg.Buttons, msg.Selects)
 	if err != nil {
 		return err
 	}
@@ -301,6 +413,57 @@ func (b *Bot) SendRich(msg messaging.RichMessage) error {
 	_, err = b.session.ChannelMessageSendComplex(b.channelID, send)
 	if err != nil {
 		return fmt.Errorf("send discord rich message: %w", err)
+	}
+	b.registerModals(modals)
+	return nil
+}
+
+// SendFile uploads a file from the local filesystem to the configured channel.
+func (b *Bot) SendFile(path, filename, caption string) error {
+	path = strings.TrimSpace(path)
+	if path == "" {
+		return fmt.Errorf("path is required")
+	}
+	f, err := os.Open(path)
+	if err != nil {
+		return fmt.Errorf("open file: %w", err)
+	}
+	defer f.Close()
+
+	st, err := f.Stat()
+	if err != nil {
+		return fmt.Errorf("stat file: %w", err)
+	}
+	if !st.Mode().IsRegular() {
+		return fmt.Errorf("path is not a regular file")
+	}
+	if st.Size() <= 0 {
+		return fmt.Errorf("file is empty")
+	}
+	if st.Size() > maxOutboundFileBytes {
+		return fmt.Errorf("file exceeds %d byte limit", maxOutboundFileBytes)
+	}
+
+	name := strings.TrimSpace(filename)
+	if name == "" {
+		name = filepath.Base(path)
+	}
+	ct := mime.TypeByExtension(filepath.Ext(name))
+	if ct == "" {
+		ct = "application/octet-stream"
+	}
+
+	send := &discordgo.MessageSend{
+		Content: strings.TrimSpace(caption),
+		Files: []*discordgo.File{{
+			Name:        name,
+			ContentType: ct,
+			Reader:      io.LimitReader(f, maxOutboundFileBytes+1),
+		}},
+	}
+	_, err = b.session.ChannelMessageSendComplex(b.channelID, send)
+	if err != nil {
+		return fmt.Errorf("send discord file: %w", err)
 	}
 	return nil
 }

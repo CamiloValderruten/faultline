@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -14,6 +16,12 @@ import (
 // TTS is configured.
 type voiceSender interface {
 	SendVoice(text string) error
+}
+
+// fileSender is optionally implemented by the Discord messenger for outbound
+// file uploads (sandbox paths resolved in the tools layer).
+type fileSender interface {
+	SendFile(path, filename, caption string) error
 }
 
 func (te *Executor) sendMessage(argsJSON string) string {
@@ -104,6 +112,81 @@ func (te *Executor) sendVoiceMessage(argsJSON string) string {
 	}
 	te.logger.Info("voice message sent to collaborator", "length", len(args.Text))
 	return "Voice message sent to collaborator."
+}
+
+func (te *Executor) sendFile(argsJSON string) string {
+	var args struct {
+		Path     string `json:"path"`
+		Filename string `json:"filename"`
+		Text     string `json:"text"`
+	}
+	if err := json.Unmarshal([]byte(argsJSON), &args); err != nil {
+		return fmt.Sprintf("Error parsing arguments: %s", err)
+	}
+	if te.files == nil {
+		return "Error: send_file requires Discord with sandbox enabled."
+	}
+	if te.sandbox == nil {
+		return "Error: sandbox is not configured"
+	}
+	hostPath, err := resolveSandboxFilePath(te.sandbox.Dir(), args.Path)
+	if err != nil {
+		return fmt.Sprintf("Error: %s", err)
+	}
+	if err := te.files.SendFile(hostPath, args.Filename, args.Text); err != nil {
+		return fmt.Sprintf("Error sending file: %s", err)
+	}
+	te.logger.Info("file sent to collaborator", "path", args.Path, "host", hostPath)
+	return fmt.Sprintf("File sent to collaborator (%s).", filepath.Base(hostPath))
+}
+
+// resolveSandboxFilePath maps container-style sandbox paths to host paths.
+// Allowed roots: /output, /input, /scripts (and bare relative under those).
+func resolveSandboxFilePath(root, raw string) (string, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return "", fmt.Errorf("path is required")
+	}
+	if strings.TrimSpace(root) == "" {
+		return "", fmt.Errorf("sandbox is not configured")
+	}
+	p := filepath.Clean(raw)
+	p = strings.ReplaceAll(p, `\`, `/`)
+
+	var rel string
+	switch {
+	case strings.HasPrefix(p, "/output/") || p == "/output":
+		rel = strings.TrimPrefix(p, "/")
+	case strings.HasPrefix(p, "/input/") || p == "/input":
+		rel = strings.TrimPrefix(p, "/")
+	case strings.HasPrefix(p, "/scripts/") || p == "/scripts":
+		rel = strings.TrimPrefix(p, "/")
+	case strings.HasPrefix(p, "output/") || strings.HasPrefix(p, "input/") || strings.HasPrefix(p, "scripts/"):
+		rel = p
+	default:
+		return "", fmt.Errorf("path must be under /output, /input, or /scripts")
+	}
+
+	host := filepath.Join(root, filepath.FromSlash(rel))
+	absRoot, err := filepath.Abs(root)
+	if err != nil {
+		return "", fmt.Errorf("sandbox root: %w", err)
+	}
+	absHost, err := filepath.Abs(host)
+	if err != nil {
+		return "", fmt.Errorf("resolve path: %w", err)
+	}
+	if absHost != absRoot && !strings.HasPrefix(absHost, absRoot+string(os.PathSeparator)) {
+		return "", fmt.Errorf("path escapes sandbox")
+	}
+	st, err := os.Stat(absHost)
+	if err != nil {
+		return "", fmt.Errorf("file not found: %s", raw)
+	}
+	if !st.Mode().IsRegular() {
+		return "", fmt.Errorf("path is not a regular file")
+	}
+	return absHost, nil
 }
 
 // sleep suspends the agent for the requested number of seconds, returning

@@ -364,3 +364,11 @@ func (t *Bot) HasPending() bool {
 	defer t.mu.Unlock()
 	return len(t.pending) > 0
 }
+
+// Typing broadcasts Telegram's "typing…" chat action.
+func (t *Bot) Typing() {
+	action := tgbotapi.NewChatAction(t.chatID, tgbotapi.ChatTyping)
+	if _, err := t.bot.Request(action); err != nil {
+		t.logger.Debug("telegram typing failed", "error", err)
+	}
+}

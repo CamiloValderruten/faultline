@@ -664,8 +664,9 @@ func (te *Executor) ToolDefs() []llm.Tool {
 							"buttons": map[string]interface{}{
 								"type": "array",
 								"description": "Optional buttons: array of rows, each row an array of " +
-									"{text, data, style?, url?} buttons. data is the callback id; style is " +
+									"{text, data, style?, url?, modal?} buttons. data is the callback id; style is " +
 									"primary|secondary|success|danger|link (Discord); url for link buttons. " +
+									"modal (Discord): {id, title, fields:[{id,label,style?,required?}]} opens a popup form on press. " +
 									"Example: [[{\"text\":\"Approve\",\"data\":\"approve\",\"style\":\"success\"}," +
 									"{\"text\":\"Deny\",\"data\":\"deny\",\"style\":\"danger\"}]].",
 								"items": map[string]interface{}{
@@ -689,19 +690,49 @@ func (te *Executor) ToolDefs() []llm.Tool {
 												"type":        "string",
 												"description": "URL for link-style buttons.",
 											},
+											"modal": map[string]interface{}{
+												"type":        "object",
+												"description": "Discord-only: open a modal form when pressed instead of a button callback.",
+												"properties": map[string]interface{}{
+													"id":    map[string]interface{}{"type": "string"},
+													"title": map[string]interface{}{"type": "string"},
+													"fields": map[string]interface{}{
+														"type": "array",
+														"items": map[string]interface{}{
+															"type": "object",
+															"properties": map[string]interface{}{
+																"id":          map[string]interface{}{"type": "string"},
+																"label":       map[string]interface{}{"type": "string"},
+																"style":       map[string]interface{}{"type": "string", "description": "short|paragraph"},
+																"placeholder": map[string]interface{}{"type": "string"},
+																"required":    map[string]interface{}{"type": "boolean"},
+															},
+															"required": []string{"id", "label"},
+														},
+													},
+												},
+												"required": []string{"id", "title", "fields"},
+											},
 										},
 										"required": []string{"text"},
 									},
 								},
 							},
 							"selects": map[string]interface{}{
-								"type":        "array",
-								"description": "Optional Discord select menus: [{id, placeholder?, options:[{label,value,description?}]}].",
+								"type": "array",
+								"description": "Optional Discord select menus: [{id, placeholder?, type?, options?}]. " +
+									"type: string (default; options required) or user|role|channel|mentionable (no options).",
 								"items": map[string]interface{}{
 									"type": "object",
 									"properties": map[string]interface{}{
 										"id":          map[string]interface{}{"type": "string"},
 										"placeholder": map[string]interface{}{"type": "string"},
+										"type": map[string]interface{}{
+											"type":        "string",
+											"description": "string|user|role|channel|mentionable",
+										},
+										"min_values": map[string]interface{}{"type": "integer"},
+										"max_values": map[string]interface{}{"type": "integer"},
 										"options": map[string]interface{}{
 											"type": "array",
 											"items": map[string]interface{}{
@@ -715,7 +746,7 @@ func (te *Executor) ToolDefs() []llm.Tool {
 											},
 										},
 									},
-									"required": []string{"id", "options"},
+									"required": []string{"id"},
 								},
 							},
 						},
@@ -769,6 +800,27 @@ func (te *Executor) ToolDefs() []llm.Tool {
 											"data":  map[string]interface{}{"type": "string"},
 											"style": map[string]interface{}{"type": "string"},
 											"url":   map[string]interface{}{"type": "string"},
+											"modal": map[string]interface{}{
+												"type": "object",
+												"properties": map[string]interface{}{
+													"id":    map[string]interface{}{"type": "string"},
+													"title": map[string]interface{}{"type": "string"},
+													"fields": map[string]interface{}{
+														"type": "array",
+														"items": map[string]interface{}{
+															"type": "object",
+															"properties": map[string]interface{}{
+																"id":       map[string]interface{}{"type": "string"},
+																"label":    map[string]interface{}{"type": "string"},
+																"style":    map[string]interface{}{"type": "string"},
+																"required": map[string]interface{}{"type": "boolean"},
+															},
+															"required": []string{"id", "label"},
+														},
+													},
+												},
+												"required": []string{"id", "title", "fields"},
+											},
 										},
 										"required": []string{"text"},
 									},
@@ -781,6 +833,7 @@ func (te *Executor) ToolDefs() []llm.Tool {
 									"properties": map[string]interface{}{
 										"id":          map[string]interface{}{"type": "string"},
 										"placeholder": map[string]interface{}{"type": "string"},
+										"type":        map[string]interface{}{"type": "string"},
 										"options": map[string]interface{}{
 											"type": "array",
 											"items": map[string]interface{}{
@@ -794,7 +847,7 @@ func (te *Executor) ToolDefs() []llm.Tool {
 											},
 										},
 									},
-									"required": []string{"id", "options"},
+									"required": []string{"id"},
 								},
 							},
 						},
@@ -808,7 +861,8 @@ func (te *Executor) ToolDefs() []llm.Tool {
 				Type: llm.ToolTypeFunction,
 				Function: &llm.FunctionDef{
 					Name: "send_voice_message",
-					Description: "Send a short spoken reply as a Discord audio message (Deepgram TTS). " +
+					Description: "Send a short spoken reply as a Discord voice message (Deepgram TTS). " +
+						"Plays in the live voice channel when connected; otherwise uploads a Discord voice-message bubble. " +
 						"Prefer this when the collaborator sent a voice note. Keep text brief and conversational — " +
 						"no markdown, no long lists. For longer detail use send_message or send_rich_message.",
 					Parameters: map[string]interface{}{
@@ -820,6 +874,35 @@ func (te *Executor) ToolDefs() []llm.Tool {
 							},
 						},
 						"required": []string{"text"},
+					},
+				},
+			})
+		}
+		if te.files != nil {
+			tools = append(tools, llm.Tool{
+				Type: llm.ToolTypeFunction,
+				Function: &llm.FunctionDef{
+					Name: "send_file",
+					Description: "Upload a sandbox file to the Discord channel (image, PDF, audio, etc.). " +
+						"path must be under /output, /input, or /scripts. Optional filename overrides the " +
+						"attachment name; optional text is a caption.",
+					Parameters: map[string]interface{}{
+						"type": "object",
+						"properties": map[string]interface{}{
+							"path": map[string]interface{}{
+								"type":        "string",
+								"description": "Sandbox path, e.g. /output/chart.png",
+							},
+							"filename": map[string]interface{}{
+								"type":        "string",
+								"description": "Optional attachment filename shown in Discord.",
+							},
+							"text": map[string]interface{}{
+								"type":        "string",
+								"description": "Optional caption text with the file.",
+							},
+						},
+						"required": []string{"path"},
 					},
 				},
 			})
@@ -1236,6 +1319,7 @@ type Executor struct {
 	index               *bm25.Index
 	messenger           messaging.Messenger // collaborator channel (Telegram or Discord); nil when disabled
 	voice               voiceSender         // optional; Discord+Deepgram SendVoice
+	files               fileSender          // optional; Discord SendFile
 	sandbox             *docker.Sandbox
 	email               *config.EmailConfig
 	kobold              *kobold.Client  // optional; nil means no perf info in context_status
@@ -1300,6 +1384,7 @@ type Deps struct {
 	VectorIndex          *vector.Index
 	Messenger            messaging.Messenger
 	Voice                voiceSender
+	Files                fileSender
 	Sandbox              *docker.Sandbox
 	Email                *config.EmailConfig
 	Kobold               *kobold.Client
@@ -1378,6 +1463,7 @@ func New(deps Deps) *Executor {
 		index:               deps.Index,
 		messenger:           deps.Messenger,
 		voice:               deps.Voice,
+		files:               deps.Files,
 		sandbox:             deps.Sandbox,
 		email:               deps.Email,
 		kobold:              deps.Kobold,
@@ -1568,6 +1654,8 @@ func (te *Executor) dispatch(ctx context.Context, call llm.ToolCall) string {
 		return te.sendRichMessage(args)
 	case "send_voice_message":
 		return te.sendVoiceMessage(args)
+	case "send_file":
+		return te.sendFile(args)
 	case "email_fetch":
 		return te.emailFetch(args)
 	case "mcp_list_servers":
