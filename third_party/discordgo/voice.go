@@ -601,14 +601,22 @@ func (v *VoiceConnection) websocket(ctx context.Context, endpoint string, token 
 				default:
 				}
 
+				// Prefer logging the real Discord close code — "disconnected"
+				// alone hid whether this was 4014/4017/4021/4022.
+				var closeErr *websocket.CloseError
+				if errors.As(err, &closeErr) {
+					v.log(LogError, "voice websocket closed code=%d text=%q", closeErr.Code, closeErr.Text)
+				} else {
+					v.log(LogError, "voice websocket read error: %v", err)
+				}
+
 				// 4014 indicates a manual disconnection by someone in the guild;
 				// 4017 indicates DAVE protocol required but not supported;
 				// 4021 indicates that the voice connection was dropped due to rate limiting;
 				// 4022 indicates that the call was terminated (e.g., channel deleted, voice server changed, call ended).
-				// we shouldn't reconnect.
+				// Mark dead so WaitForDAVEReady fails fast instead of burning the timeout.
 				if websocket.IsCloseError(err, 4014, 4017, 4021, 4022) {
-					v.log(LogInformational, "received close code disconnected")
-
+					v.failure(fmt.Errorf("voice websocket closed, %w", err))
 					return
 				}
 
