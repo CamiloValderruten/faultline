@@ -143,6 +143,7 @@ func isSecretField(name string) bool {
 var selectOptions = map[string][]string{
 	"log.level":           {"debug", "info", "warn", "error"},
 	"update.restart_mode": {"exit", "self-exec", "command"},
+	"agent.thinking":      {"", "disabled", "adaptive", "enabled"},
 }
 
 // sectionTitles lets us label the top-level sections with a short

@@ -644,23 +644,70 @@ func (te *Executor) ToolDefs() []llm.Tool {
 	}
 
 	if te.telegram != nil {
-		tools = append(tools, llm.Tool{
-			Type: llm.ToolTypeFunction,
-			Function: &llm.FunctionDef{
-				Name:        "send_message",
-				Description: "Send a message to your collaborator via Telegram. Use this to share interesting findings, ask questions, report on your progress, or communicate anything you want. Your collaborator may not respond immediately.",
-				Parameters: map[string]interface{}{
-					"type": "object",
-					"properties": map[string]interface{}{
-						"text": map[string]interface{}{
-							"type":        "string",
-							"description": "The message text to send.",
+		tools = append(tools,
+			llm.Tool{
+				Type: llm.ToolTypeFunction,
+				Function: &llm.FunctionDef{
+					Name: "send_message",
+					Description: "Send a message to your collaborator via Telegram. Use for chat, questions, and progress. " +
+						"Optional inline buttons are for decisions/approvals (not every reply). " +
+						"When the collaborator taps a button, you receive it as a collaborator message. " +
+						"Your collaborator may not respond immediately.",
+					Parameters: map[string]interface{}{
+						"type": "object",
+						"properties": map[string]interface{}{
+							"text": map[string]interface{}{
+								"type":        "string",
+								"description": "The message text to send (Markdown ok).",
+							},
+							"buttons": map[string]interface{}{
+								"type": "array",
+								"description": "Optional inline keyboard: array of rows, each row an array of " +
+									"{text, data} buttons. Max 8 buttons total; data max 64 bytes. " +
+									"Example: [[{\"text\":\"Approve\",\"data\":\"approve\"},{\"text\":\"Deny\",\"data\":\"deny\"}]].",
+								"items": map[string]interface{}{
+									"type": "array",
+									"items": map[string]interface{}{
+										"type": "object",
+										"properties": map[string]interface{}{
+											"text": map[string]interface{}{
+												"type":        "string",
+												"description": "Button label shown to the collaborator.",
+											},
+											"data": map[string]interface{}{
+												"type":        "string",
+												"description": "Callback data returned when pressed (max 64 bytes).",
+											},
+										},
+										"required": []string{"text", "data"},
+									},
+								},
+							},
 						},
+						"required": []string{"text"},
 					},
-					"required": []string{"text"},
 				},
 			},
-		})
+			llm.Tool{
+				Type: llm.ToolTypeFunction,
+				Function: &llm.FunctionDef{
+					Name: "send_rich_message",
+					Description: "Send a structured digest to Telegram (daily summary, Luca status, household card). " +
+						"Prefer this over send_message for formatted digests with headings/lists. " +
+						"Do not use for ordinary chat. Falls back to plain Markdown if rich API is unavailable.",
+					Parameters: map[string]interface{}{
+						"type": "object",
+						"properties": map[string]interface{}{
+							"content": map[string]interface{}{
+								"type": "string",
+								"description": "Digest content. HTML or Markdown-style text with headings and lists works well.",
+							},
+						},
+						"required": []string{"content"},
+					},
+				},
+			},
+		)
 	}
 
 	if te.email != nil {
@@ -1398,6 +1445,8 @@ func (te *Executor) dispatch(ctx context.Context, call llm.ToolCall) string {
 		return te.updateApply(ctx)
 	case "send_message":
 		return te.sendMessage(args)
+	case "send_rich_message":
+		return te.sendRichMessage(args)
 	case "email_fetch":
 		return te.emailFetch(args)
 	case "mcp_list_servers":
@@ -2921,7 +2970,11 @@ func (te *Executor) emailFetch(argsJSON string) string {
 
 func (te *Executor) sendMessage(argsJSON string) string {
 	var args struct {
-		Text string `json:"text"`
+		Text    string `json:"text"`
+		Buttons [][]struct {
+			Text string `json:"text"`
+			Data string `json:"data"`
+		} `json:"buttons"`
 	}
 	if err := json.Unmarshal([]byte(argsJSON), &args); err != nil {
 		return fmt.Sprintf("Error parsing arguments: %s", err)
@@ -2935,12 +2988,50 @@ func (te *Executor) sendMessage(argsJSON string) string {
 		return "Error: messaging is not configured. No collaborator channel available."
 	}
 
-	if err := te.telegram.Send(args.Text); err != nil {
-		return fmt.Sprintf("Error sending message: %s", err)
+	if len(args.Buttons) == 0 {
+		if err := te.telegram.Send(args.Text); err != nil {
+			return fmt.Sprintf("Error sending message: %s", err)
+		}
+		te.logger.Info("message sent to collaborator", "length", len(args.Text))
+		return "Message sent to collaborator."
 	}
 
-	te.logger.Info("message sent to collaborator", "length", len(args.Text))
+	btnRows := make([][]telegram.Button, 0, len(args.Buttons))
+	for _, row := range args.Buttons {
+		out := make([]telegram.Button, 0, len(row))
+		for _, b := range row {
+			out = append(out, telegram.Button{Text: b.Text, Data: b.Data})
+		}
+		btnRows = append(btnRows, out)
+	}
+	if err := te.telegram.SendWithButtons(args.Text, btnRows); err != nil {
+		return fmt.Sprintf("Error sending message: %s", err)
+	}
+	te.logger.Info("message with buttons sent to collaborator",
+		"length", len(args.Text),
+		"button_rows", len(btnRows),
+	)
 	return "Message sent to collaborator."
+}
+
+func (te *Executor) sendRichMessage(argsJSON string) string {
+	var args struct {
+		Content string `json:"content"`
+	}
+	if err := json.Unmarshal([]byte(argsJSON), &args); err != nil {
+		return fmt.Sprintf("Error parsing arguments: %s", err)
+	}
+	if strings.TrimSpace(args.Content) == "" {
+		return "Error: content is required"
+	}
+	if te.telegram == nil {
+		return "Error: messaging is not configured. No collaborator channel available."
+	}
+	if err := te.telegram.SendRich(args.Content); err != nil {
+		return fmt.Sprintf("Error sending rich message: %s", err)
+	}
+	te.logger.Info("rich message sent to collaborator", "length", len(args.Content))
+	return "Rich message sent to collaborator."
 }
 
 // sleep suspends the agent for the requested number of seconds, returning

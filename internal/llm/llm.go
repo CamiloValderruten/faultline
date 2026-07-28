@@ -29,6 +29,11 @@ type ChatRequest struct {
 	TopK              int
 	MinP              float32
 	RepetitionPenalty float32
+
+	// Thinking is a MiniMax-M3 control: "disabled", "adaptive", or
+	// "enabled". Empty means omit (server default — thinking on for
+	// Chat Completions). Unknown backends ignore the field.
+	Thinking string
 }
 
 // EstimateTokens provides a rough token count for a string.
