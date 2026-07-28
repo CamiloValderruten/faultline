@@ -9,6 +9,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"github.com/CamiloValderruten/faultline/internal/messaging"
 	"github.com/bwmarrin/discordgo"
@@ -21,12 +22,17 @@ import (
 var ackOgg []byte
 
 const (
-	voiceSilenceGate   = time.Second
-	voiceMinUtterance  = 400 * time.Millisecond
-	voiceMaxUtterance  = 60 * time.Second
-	voiceJoinTimeout   = 15 * time.Second
+	voiceSilenceGate    = time.Second
+	voiceMinUtterance   = 400 * time.Millisecond
+	voiceMaxUtterance   = 60 * time.Second
+	voiceJoinTimeout    = 20 * time.Second // includes VSU coalesce (~750ms) + DAVE Welcome
+	voiceLeaveSettle    = 750 * time.Millisecond
 	voiceOpusSampleRate = 48000
 	voiceOpusChannels   = 2
+	// Drop DAVE-decrypt garbage / accidental noise fragments before they
+	// reach the agent ("20 6", single phonemes, etc.). Real short commands
+	// like "yes"/"stop" still pass.
+	voiceMinTranscriptRunes = 3
 )
 
 type oggSpeaker interface {
@@ -182,9 +188,9 @@ func (b *Bot) joinVoice(guildID string) {
 		old.Kill()
 	}
 
-	// Discord often emits a second VOICE_SERVER_UPDATE during connect; joining
-	// immediately races and yields "use of closed network connection" on UDP.
-	time.Sleep(500 * time.Millisecond)
+	// Force a gateway leave so Discord does not coalesce leave+rejoin into a
+	// no-op (common cause of close 4006 on retry).
+	b.forceGatewayLeave(guildID)
 	if !b.operatorInConfiguredVoice() {
 		b.logger.Debug("discord voice join aborted; operator left before connect")
 		return
@@ -215,6 +221,8 @@ func (b *Bot) joinVoice(guildID string) {
 			"channel_id", b.voiceChannelID,
 		)
 		if attempt < maxAttempts {
+			// 4006 / session-invalid: leave fully before the next join.
+			b.forceGatewayLeave(guildID)
 			time.Sleep(time.Duration(attempt) * 750 * time.Millisecond)
 			if !b.operatorInConfiguredVoice() {
 				b.logger.Debug("discord voice join aborted; operator left during retries")
@@ -223,6 +231,18 @@ func (b *Bot) joinVoice(guildID string) {
 		}
 	}
 	b.logger.Error("discord voice join failed", "error", lastErr, "channel_id", b.voiceChannelID, "attempts", maxAttempts)
+}
+
+// forceGatewayLeave clears the bot's voice state at the gateway and waits for
+// Discord to settle so a subsequent join allocates a fresh session.
+func (b *Bot) forceGatewayLeave(guildID string) {
+	if guildID == "" || b.session == nil {
+		return
+	}
+	if err := b.session.VoiceStateUpdate(guildID, "", true, true); err != nil {
+		b.logger.Debug("discord voice gateway leave", "error", err, "guild_id", guildID)
+	}
+	time.Sleep(voiceLeaveSettle)
 }
 
 func (b *Bot) tryJoinVoiceOnce(guildID string) (*discordgo.VoiceConnection, error) {
@@ -275,6 +295,8 @@ func (b *Bot) leaveVoice() {
 }
 
 func (b *Bot) voiceListen(vc *discordgo.VoiceConnection) {
+	defer b.onVoiceListenExit(vc)
+
 	ssrcUser := make(map[uint32]string)
 	var ssrcMu sync.Mutex
 	vc.AddHandler(func(_ *discordgo.VoiceConnection, vs *discordgo.VoiceSpeakingUpdate) {
@@ -376,6 +398,31 @@ func (b *Bot) voiceListen(vc *discordgo.VoiceConnection) {
 	}
 }
 
+// onVoiceListenExit clears a dead connection and rejoins if the operator is
+// still in the configured VC (handles mid-call 4006 / DAVE drops).
+func (b *Bot) onVoiceListenExit(vc *discordgo.VoiceConnection) {
+	b.voiceMu.Lock()
+	if b.vc == vc {
+		b.vc = nil
+		b.voiceGuildID = ""
+	}
+	guildID := ""
+	if vc != nil {
+		guildID = vc.GuildID
+	}
+	joining := b.voiceJoining
+	b.voiceMu.Unlock()
+
+	if joining || guildID == "" || !b.operatorInConfiguredVoice() {
+		return
+	}
+	b.logger.Warn("discord voice connection dropped; rejoining",
+		"channel_id", b.voiceChannelID,
+		"guild_id", guildID,
+	)
+	go b.joinVoice(guildID)
+}
+
 func (b *Bot) handleVoiceUtterance(vc *discordgo.VoiceConnection, packets [][]byte) {
 	if b.speech == nil || len(packets) == 0 {
 		return
@@ -401,11 +448,18 @@ func (b *Bot) handleVoiceUtterance(vc *discordgo.VoiceConnection, packets [][]by
 		return
 	}
 	transcript = strings.TrimSpace(transcript)
-	if transcript == "" {
+	if !usableVoiceTranscript(transcript) {
+		if transcript != "" {
+			b.logger.Debug("dropping short voice transcript", "transcript", transcript)
+		}
 		return
 	}
 	b.logger.Info("transcribed collaborator voice channel utterance", "chars", len(transcript))
 	b.enqueue(messaging.VoiceChannelPreamble + transcript)
+}
+
+func usableVoiceTranscript(transcript string) bool {
+	return utf8.RuneCountInString(transcript) >= voiceMinTranscriptRunes
 }
 
 func muxOpusPacketsToOgg(packets [][]byte) ([]byte, error) {

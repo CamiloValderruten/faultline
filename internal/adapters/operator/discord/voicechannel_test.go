@@ -1,12 +1,11 @@
 package discord
 
 import (
-	"testing"
-
-	"github.com/CamiloValderruten/faultline/internal/messaging"
-	"github.com/pion/webrtc/v3/pkg/media/oggreader"
 	"bytes"
 	"io"
+	"testing"
+
+	"github.com/pion/webrtc/v3/pkg/media/oggreader"
 )
 
 func TestMuxOpusPacketsToOgg_RoundTripPages(t *testing.T) {
@@ -58,17 +57,19 @@ func TestAckOgg_Readable(t *testing.T) {
 	}
 }
 
-func TestVoiceChannelPreamble(t *testing.T) {
-	if !containsAll(messaging.VoiceChannelPreamble, "send_voice_message", "voice channel") {
-		t.Fatalf("preamble=%q", messaging.VoiceChannelPreamble)
+func TestUsableVoiceTranscript(t *testing.T) {
+	cases := []struct {
+		in   string
+		want bool
+	}{
+		{"", false},
+		{"ok", false},
+		{"yes", true},
+		{"stop", true},
 	}
-}
-
-func containsAll(s string, parts ...string) bool {
-	for _, p := range parts {
-		if !bytes.Contains([]byte(s), []byte(p)) {
-			return false
+	for _, tc := range cases {
+		if got := usableVoiceTranscript(tc.in); got != tc.want {
+			t.Fatalf("usableVoiceTranscript(%q)=%v want %v", tc.in, got, tc.want)
 		}
 	}
-	return true
 }

@@ -52,5 +52,7 @@ require (
 )
 
 // Discord enforces DAVE/E2EE on voice (close 4017). Upstream discordgo lacks
-// it; yeongaori's fork adds pure-Go DAVE via circl/MLS.
-replace github.com/bwmarrin/discordgo => github.com/yeongaori/discordgo-fork v0.0.0-20260627070107-c65bda26a53b
+// it; we vendor yeongaori's DAVE fork with Faultline patches for the
+// WaitForDAVEReady session-pointer race, VOICE_SERVER_UPDATE coalesce, and
+// close-4006 handling. See third_party/discordgo/FAULTLINE.md.
+replace github.com/bwmarrin/discordgo => ./third_party/discordgo

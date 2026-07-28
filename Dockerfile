@@ -6,6 +6,8 @@ ARG TARGETARCH
 WORKDIR /workspace
 COPY go.mod go.mod
 COPY go.sum go.sum
+# Local replace for DAVE-patched discordgo; must exist before go mod download.
+COPY third_party/discordgo third_party/discordgo
 RUN go mod download
 
 COPY . .
