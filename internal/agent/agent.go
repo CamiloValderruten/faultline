@@ -552,8 +552,7 @@ func (a *Agent) Run(ctx context.Context, shutdownCh <-chan struct{}) error {
 			// Rate limits / quota exhaustion are transient from the
 			// process's point of view: Discord, admin UI, and pending
 			// collaborator messages should stay alive while we wait.
-			// Exiting here crash-loops under docker restart policies and
-			// tears down the voice gateway mid-DAVE handshake.
+			// Exiting here crash-loops under docker restart policies.
 			if isRateLimited(err) {
 				a.recordError(err)
 				a.logger.Warn("llm rate limited, backing off",

@@ -862,7 +862,7 @@ func (te *Executor) ToolDefs() []llm.Tool {
 				Function: &llm.FunctionDef{
 					Name: "send_voice_message",
 					Description: "Send a short spoken reply as a Discord voice message (Deepgram TTS). " +
-						"Plays in the live voice channel when connected; otherwise uploads a Discord voice-message bubble. " +
+						"Uploads a Discord voice-message bubble in the text channel. " +
 						"Prefer this when the collaborator sent a voice note. Keep text brief and conversational — " +
 						"no markdown, no long lists. For longer detail use send_message or send_rich_message.",
 					Parameters: map[string]interface{}{

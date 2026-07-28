@@ -22,6 +22,11 @@ type Speech interface {
 	Speak(ctx context.Context, text string) (audio []byte, contentType string, err error)
 }
 
+// oggSpeaker is optional TTS that returns Discord-native Ogg/Opus.
+type oggSpeaker interface {
+	SpeakOggOpus(ctx context.Context, text string) ([]byte, error)
+}
+
 // SetSpeech enables voice-note transcription and send_voice_message.
 func (b *Bot) SetSpeech(speech Speech) {
 	b.speech = speech
@@ -120,6 +125,56 @@ func (b *Bot) downloadAttachmentBytes(att *discordgo.MessageAttachment) ([]byte,
 		ct = att.ContentType
 	}
 	return data, ct, nil
+}
+
+// SendVoice synthesizes speech and uploads a Discord voice-message bubble
+// to the text channel.
+func (b *Bot) SendVoice(text string) error {
+	text = strings.TrimSpace(text)
+	if text == "" {
+		return fmt.Errorf("text is required")
+	}
+	if b.speech == nil {
+		return fmt.Errorf("voice replies require [deepgram] to be configured")
+	}
+
+	spoken := stripForSpeech(text)
+	if spoken == "" {
+		spoken = text
+	}
+
+	oggSp, ok := b.speech.(oggSpeaker)
+	if !ok {
+		return fmt.Errorf("discord voice messages require Ogg/Opus (SpeakOggOpus) support")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+	defer cancel()
+	ogg, err := oggSp.SpeakOggOpus(ctx, spoken)
+	if err != nil {
+		return fmt.Errorf("tts ogg: %w", err)
+	}
+
+	duration := oggOpusDurationSecs(ogg)
+	waveform := waveformFromBytes(ogg)
+	b.logger.Info("sending discord voice message", "bytes", len(ogg), "chars", len(spoken), "duration_s", duration)
+	_, err = b.session.ChannelMessageSendComplex(b.channelID, &discordgo.MessageSend{
+		Flags: discordgo.MessageFlagsIsVoiceMessage,
+		Files: []*discordgo.File{{
+			Name:        "voice-message.ogg",
+			ContentType: "audio/ogg",
+			Reader:      bytes.NewReader(ogg),
+		}},
+		Attachments: []*discordgo.MessageAttachment{{
+			ID:           "0",
+			Filename:     "voice-message.ogg",
+			DurationSecs: duration,
+			Waveform:     waveform,
+		}},
+	})
+	if err != nil {
+		return fmt.Errorf("send discord voice message: %w", err)
+	}
+	return nil
 }
 
 // oggOpusDurationSecs estimates playback length from Ogg pages (~20ms each).

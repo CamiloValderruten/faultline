@@ -8,7 +8,6 @@ require (
 	github.com/Mad-Pixels/goldmark-tgmd v0.0.10
 	github.com/bwmarrin/discordgo v0.29.0
 	github.com/go-telegram-bot-api/telegram-bot-api/v5 v5.5.1
-	github.com/pion/rtp v1.10.1
 	github.com/pion/webrtc/v3 v3.3.5
 	golang.org/x/crypto v0.50.0
 	golang.org/x/mod v0.35.0
@@ -41,7 +40,6 @@ require (
 	github.com/olekukonko/errors v1.2.0 // indirect
 	github.com/olekukonko/ll v0.1.8 // indirect
 	github.com/olekukonko/tablewriter v1.1.4 // indirect
-	github.com/pion/randutil v0.1.0 // indirect
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/rs/xid v1.6.0 // indirect
 	github.com/sqs/go-xoauth2 v0.0.0-20120917012134-0911dad68e56 // indirect

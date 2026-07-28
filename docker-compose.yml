@@ -27,10 +27,6 @@ services:
     stop_grace_period: 3m
     environment:
       - TZ=America/New_York
-    # Host networking: Discord voice needs stable outbound UDP. Docker bridge
-    # NAT on the Pi races/drops the voice handshake ("use of closed network
-    # connection"). Admin UI still binds cfg.admin.bind (0.0.0.0:8710).
-    network_mode: host
     group_add:
       - "${DOCKER_GID:-986}"
     volumes:

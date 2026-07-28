@@ -34,16 +34,6 @@ type Bot struct {
 	// buttonData → modal declared on send; opened within the 3s interaction window.
 	modalsMu sync.Mutex
 	modals   map[string]messaging.ModalSpec
-
-	// Live voice channel (optional).
-	voiceMu           sync.Mutex
-	voiceChannelID    string
-	operatorUserID    string
-	voiceGuildID      string
-	vc                *discordgo.VoiceConnection
-	voicePlaying      bool
-	voiceJoining      bool
-	voiceHandlerAdded bool
 }
 
 // New creates a Discord session (not yet connected). Call Start to open
@@ -62,9 +52,6 @@ func New(token, channelID string, logger *slog.Logger) (*Bot, error) {
 	if err != nil {
 		return nil, fmt.Errorf("create discord session: %w", err)
 	}
-	// Surface voice/DAVE handshake progress (Welcome, key package, close codes)
-	// into docker logs while live voice is still stabilizing.
-	session.LogLevel = discordgo.LogInformational
 	session.Identify.Intents = discordgo.IntentGuilds |
 		discordgo.IntentGuildMessages |
 		discordgo.IntentDirectMessages |
@@ -94,7 +81,6 @@ func (b *Bot) Start(ctx context.Context) {
 	b.logger.Info("discord listener started", "user", user, "channel_id", b.channelID)
 
 	<-ctx.Done()
-	b.leaveVoice()
 	if err := b.session.Close(); err != nil {
 		b.logger.Debug("discord session close", "error", err)
 	}
