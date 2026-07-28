@@ -186,11 +186,10 @@ func (b *Bot) joinVoice(guildID string) {
 		_ = old.Disconnect(ctx)
 		cancel()
 		old.Kill()
+		// Only settle after tearing down a prior session. A leave when we
+		// were never connected can make Discord emit 4022 on the next join.
+		b.forceGatewayLeave(guildID)
 	}
-
-	// Force a gateway leave so Discord does not coalesce leave+rejoin into a
-	// no-op (common cause of close 4006 on retry).
-	b.forceGatewayLeave(guildID)
 	if !b.operatorInConfiguredVoice() {
 		b.logger.Debug("discord voice join aborted; operator left before connect")
 		return
@@ -221,7 +220,7 @@ func (b *Bot) joinVoice(guildID string) {
 			"channel_id", b.voiceChannelID,
 		)
 		if attempt < maxAttempts {
-			// 4006 / session-invalid: leave fully before the next join.
+			// 4006 / 4022: leave fully before the next join.
 			b.forceGatewayLeave(guildID)
 			time.Sleep(time.Duration(attempt) * 750 * time.Millisecond)
 			if !b.operatorInConfiguredVoice() {

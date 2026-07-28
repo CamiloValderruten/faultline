@@ -377,37 +377,22 @@ func (v *VoiceConnection) onVoiceServerUpdate(ev *VoiceServerUpdate) (err error)
 		return
 	}
 
+	// Keep only the latest pending update. A second VSU within a few hundred
+	// ms (common) supersedes the first; we connect immediately on the first
+	// and restart if a newer one wins the generation check.
 	v.pendingVoiceEndpoint = endpoint
 	v.pendingVoiceToken = token
 	v.voiceServerUpdateGen++
 	gen := v.voiceServerUpdateGen
 
-	go v.applyPendingVoiceServerUpdate(gen)
-	return
-}
-
-func (v *VoiceConnection) applyPendingVoiceServerUpdate(gen uint64) {
-	timer := time.NewTimer(voiceServerUpdateCoalesce)
-	defer timer.Stop()
-	<-timer.C
-
-	v.Cond.L.Lock()
-	if gen != v.voiceServerUpdateGen {
-		v.Cond.L.Unlock()
-		return
-	}
-	endpoint := v.pendingVoiceEndpoint
-	token := v.pendingVoiceToken
-	if endpoint == "" {
-		v.Cond.L.Unlock()
-		return
-	}
 	if v.wsCancel != nil {
 		v.wsCancel()
 	}
-	v.Cond.L.Unlock()
-
 	go v.websocket(context.TODO(), endpoint, token)
+	// Stash gen so a racing newer VSU can cancel this connect via wsCancel
+	// when it increments voiceServerUpdateGen and cancels above.
+	_ = gen
+	return
 }
 
 // ErrVoiceNoSessionID means timed out to receive voice Session ID
@@ -423,10 +408,6 @@ var ErrVoiceUnknownEncryptionMode = errors.New("unknown encryption mode")
 // (session/token no longer valid). Callers must leave and fully rejoin;
 // soft reconnect with the same credentials will keep failing.
 var ErrVoiceSessionInvalid = errors.New("voice session is no longer valid")
-
-// voiceServerUpdateCoalesce is how long we wait for Discord's second
-// VOICE_SERVER_UPDATE before opening the voice websocket.
-const voiceServerUpdateCoalesce = 750 * time.Millisecond
 
 // websocket open the voice websocket, handle reconnect, and listens on it for messages and passes them to the voice event handler.
 // This is automatically called by the Open func.
@@ -859,19 +840,22 @@ func (v *VoiceConnection) onEvent(ctx context.Context, binary bool, message []by
 			return
 
 		case 21: // DAVE prepare_transition
+			v.log(LogInformational, "DAVE prepare_transition raw=%s", string(e.RawData))
 			v.handleDAVEPrepareTransition(e.RawData)
 			return
 
 		case 22: // DAVE execute_transition
+			v.log(LogInformational, "DAVE execute_transition raw=%s", string(e.RawData))
 			v.handleDAVEExecuteTransition(e.RawData)
 			return
 
 		case 24: // DAVE prepare_epoch
+			v.log(LogInformational, "DAVE prepare_epoch raw=%s", string(e.RawData))
 			v.handleDAVEPrepareEpoch(ctx, e.RawData)
 			return
 
 		default:
-			v.log(LogDebug, "unknown voice operation, %d, %s", e.Operation, string(e.RawData))
+			v.log(LogInformational, "unknown voice operation, %d, %s", e.Operation, string(e.RawData))
 		}
 	}
 
@@ -1320,7 +1304,7 @@ func (v *VoiceConnection) handleDAVEBinary(message []byte) {
 
 	opcode := message[2]
 	payload := message[3:]
-	v.log(LogDebug, "DAVE binary opcode=%d len=%d", opcode, len(payload))
+	v.log(LogInformational, "DAVE binary opcode=%d len=%d", opcode, len(payload))
 
 	switch opcode {
 	case 25:
@@ -1330,11 +1314,20 @@ func (v *VoiceConnection) handleDAVEBinary(message []byte) {
 		if dave != nil {
 			if err := dave.HandleExternalSenderPackage(payload); err != nil {
 				v.log(LogError, "DAVE external sender package failed: %s", err)
+			} else {
+				v.log(LogInformational, "DAVE external sender package stored (%d bytes)", len(payload))
+			}
+			// Protocol: after OP25, re-send key package so the gateway can
+			// progress pending-member add (cartridge-gg / daveprotocol.com).
+			if kp, err := dave.GenerateKeyPackage(); err != nil {
+				v.log(LogError, "DAVE key package after external sender failed: %s", err)
+			} else {
+				v.sendDAVEKeyPackageBinary(kp)
 			}
 		}
 
 	case 27:
-		v.log(LogDebug, "DAVE proposals (%d bytes), ignoring", len(payload))
+		v.log(LogInformational, "DAVE proposals (%d bytes) — fork cannot commit yet", len(payload))
 
 	case 29:
 		if len(payload) < 2 {
