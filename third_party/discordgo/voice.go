@@ -1329,6 +1329,7 @@ func (v *VoiceConnection) handleDAVEBinary(message []byte) {
 		v.sendDAVEBinary(result.KeyPackagePacket)
 	}
 	if len(result.CommitWelcomePacket) > 0 {
+		v.log(LogInformational, "DAVE sending commit_welcome (%d bytes)", len(result.CommitWelcomePacket))
 		v.sendDAVEBinary(result.CommitWelcomePacket)
 	}
 	if result.SendTransitionReady && result.TransitionID != nil {

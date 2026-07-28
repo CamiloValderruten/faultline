@@ -200,6 +200,11 @@ const (
 	// token count. By this point the model is clearly stuck and a fresh
 	// rebuild from memories is cheaper than continuing to feed it nudges.
 	idleForceCompactionThreshold = 8
+
+	// rateLimitBackoff is how long Run sleeps after an LLM HTTP 429 /
+	// quota error before retrying. Long enough to avoid hammering a
+	// depleted plan; short enough that Discord/admin stay responsive.
+	rateLimitBackoff = 60 * time.Second
 )
 
 // idleNudgePrompt is injected in place of the normal continue prompt once
@@ -207,6 +212,17 @@ const (
 // It is more directive than continue.md on purpose: at this point the
 // model has demonstrated it is not going to act on a gentle reminder.
 const idleNudgePrompt = "[Time: %s]\n\nYou have produced %d text-only responses in a row with no tool calls and no new input from your collaborator. This is a stuck loop. Break out of it now: call a tool. Good options are `context_status` (to see your token usage), `memory_list` with directory `\"\"` (to remember what you have), or `memory_write` to save whatever you were thinking about. Do not reply with another text-only message — that will only deepen the loop."
+
+// isRateLimited reports whether err looks like an LLM provider rate limit
+// or quota exhaustion (HTTP 429). Matches the openai adapter's
+// "chat completion: HTTP %d: ..." shape and common "rate limit" wording.
+func isRateLimited(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "http 429") || strings.Contains(msg, "rate limit")
+}
 
 // toolMessage builds a tool-role chat message satisfying a tool_call_id.
 // The body is prefixed with an RFC1123 timestamp so the model has a
@@ -532,6 +548,26 @@ func (a *Agent) Run(ctx context.Context, shutdownCh <-chan struct{}) error {
 			if ctx.Err() != nil {
 				a.abortInFlight()
 				return ctx.Err()
+			}
+			// Rate limits / quota exhaustion are transient from the
+			// process's point of view: Discord, admin UI, and pending
+			// collaborator messages should stay alive while we wait.
+			// Exiting here crash-loops under docker restart policies and
+			// tears down the voice gateway mid-DAVE handshake.
+			if isRateLimited(err) {
+				a.recordError(err)
+				a.logger.Warn("llm rate limited, backing off",
+					"error", err, "backoff", rateLimitBackoff)
+				a.setPhase(PhaseIdle)
+				select {
+				case <-ctx.Done():
+					return ctx.Err()
+				case <-shutdownCh:
+					a.setPhase(PhaseSaving)
+					return a.handleShutdown(ctx, messages, toolDefs, prompts)
+				case <-time.After(rateLimitBackoff):
+				}
+				continue
 			}
 			return fmt.Errorf("llm chat: %w", err)
 		}
