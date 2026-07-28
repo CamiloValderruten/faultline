@@ -22,19 +22,51 @@ type Messenger interface {
 // when pressed (Telegram callback_data / Discord custom_id). Style and URL
 // are honored by Discord; Telegram ignores Style and uses URL for link
 // buttons when set.
+//
+// Modal (Discord only): when set, pressing the button opens a popup form
+// instead of enqueueing a button press. The adapter must respond within
+// Discord's 3s interaction window, so the agent declares the modal on
+// send — it cannot open one later via a tool. Modal submit arrives as a
+// collaborator message. Telegram ignores Modal.
 type Button struct {
-	Text  string `json:"text"`
-	Data  string `json:"data"`
-	Style string `json:"style,omitempty"` // primary|secondary|success|danger|link
-	URL   string `json:"url,omitempty"`
+	Text  string     `json:"text"`
+	Data  string     `json:"data"`
+	Style string     `json:"style,omitempty"` // primary|secondary|success|danger|link
+	URL   string     `json:"url,omitempty"`
+	Modal *ModalSpec `json:"modal,omitempty"`
+}
+
+// ModalSpec describes a Discord modal opened by a button press.
+type ModalSpec struct {
+	ID     string       `json:"id"` // custom_id on the modal submit
+	Title  string       `json:"title"`
+	Fields []ModalField `json:"fields"`
+}
+
+// ModalField is one text input in a ModalSpec.
+type ModalField struct {
+	ID          string `json:"id"`
+	Label       string `json:"label"`
+	Style       string `json:"style,omitempty"` // short|paragraph (default short)
+	Placeholder string `json:"placeholder,omitempty"`
+	Required    bool   `json:"required,omitempty"`
+	MinLength   int    `json:"min_length,omitempty"`
+	MaxLength   int    `json:"max_length,omitempty"`
+	Value       string `json:"value,omitempty"` // prefill
 }
 
 // SelectMenu is a dropdown. Discord renders it; Telegram flattens options
 // into the message text.
+//
+// Type selects Discord auto-populated menus: string (default), user, role,
+// channel, mentionable. Options are required only for string selects.
 type SelectMenu struct {
 	ID          string         `json:"id"`
 	Placeholder string         `json:"placeholder,omitempty"`
-	Options     []SelectOption `json:"options"`
+	Type        string         `json:"type,omitempty"` // string|user|role|channel|mentionable
+	MinValues   int            `json:"min_values,omitempty"`
+	MaxValues   int            `json:"max_values,omitempty"`
+	Options     []SelectOption `json:"options,omitempty"`
 }
 
 // SelectOption is one choice in a SelectMenu.
@@ -105,6 +137,13 @@ func FlattenText(msg RichMessage) string {
 		b.WriteString("*")
 		b.WriteString(ph)
 		b.WriteString(":*\n")
+		typ := strings.ToLower(strings.TrimSpace(sel.Type))
+		if typ != "" && typ != "string" {
+			b.WriteString("(Discord ")
+			b.WriteString(typ)
+			b.WriteString(" picker)\n")
+			continue
+		}
 		for _, opt := range sel.Options {
 			b.WriteString("- ")
 			b.WriteString(strings.TrimSpace(opt.Label))

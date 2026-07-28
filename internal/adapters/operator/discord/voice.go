@@ -1,7 +1,9 @@
 package discord
 
 import (
+	"bytes"
 	"context"
+	"encoding/base64"
 	"fmt"
 	"io"
 	"net/http"
@@ -11,6 +13,7 @@ import (
 
 	"github.com/CamiloValderruten/faultline/internal/messaging"
 	"github.com/bwmarrin/discordgo"
+	"github.com/pion/webrtc/v3/pkg/media/oggreader"
 )
 
 // Speech is optional STT/TTS used for collaborator voice notes.
@@ -117,6 +120,72 @@ func (b *Bot) downloadAttachmentBytes(att *discordgo.MessageAttachment) ([]byte,
 		ct = att.ContentType
 	}
 	return data, ct, nil
+}
+
+// oggOpusDurationSecs estimates playback length from Ogg pages (~20ms each).
+func oggOpusDurationSecs(ogg []byte) float64 {
+	reader, _, err := oggreader.NewWith(bytes.NewReader(ogg))
+	if err != nil {
+		return fallbackOggDuration(len(ogg))
+	}
+	pages := 0
+	for {
+		page, _, err := reader.ParseNextPage()
+		if err != nil {
+			break
+		}
+		if len(page) > 0 {
+			pages++
+		}
+	}
+	if pages < 1 {
+		return fallbackOggDuration(len(ogg))
+	}
+	secs := float64(pages) * 0.02
+	if secs < 0.5 {
+		secs = 0.5
+	}
+	return secs
+}
+
+func fallbackOggDuration(nbytes int) float64 {
+	// ~24 kbps speech bitrate estimate.
+	secs := float64(nbytes) * 8 / 24000
+	if secs < 0.5 {
+		secs = 0.5
+	}
+	return secs
+}
+
+// waveformFromBytes builds a Discord voice-message waveform preview (≤256 samples).
+func waveformFromBytes(data []byte) string {
+	const n = 256
+	out := make([]byte, n)
+	if len(data) == 0 {
+		return base64.StdEncoding.EncodeToString(out)
+	}
+	chunk := len(data) / n
+	if chunk < 1 {
+		chunk = 1
+	}
+	for i := 0; i < n; i++ {
+		start := i * chunk
+		if start >= len(data) {
+			break
+		}
+		end := start + chunk
+		if end > len(data) {
+			end = len(data)
+		}
+		var max byte
+		for _, b := range data[start:end] {
+			if b > max {
+				max = b
+			}
+		}
+		out[i] = max
+	}
+	return base64.StdEncoding.EncodeToString(out)
 }
 
 func stripForSpeech(s string) string {

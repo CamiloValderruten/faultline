@@ -9,7 +9,7 @@ import (
 )
 
 func TestBuildComponents_ButtonsAndSelect(t *testing.T) {
-	comps, err := buildComponents(
+	comps, modals, err := buildComponents(
 		[][]messaging.Button{
 			{{Text: "Approve", Data: "approve", Style: "success"}, {Text: "Deny", Data: "deny", Style: "danger"}},
 		},
@@ -25,6 +25,9 @@ func TestBuildComponents_ButtonsAndSelect(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if len(modals) != 0 {
+		t.Fatalf("modals=%v", modals)
+	}
 	if len(comps) != 2 {
 		t.Fatalf("rows=%d", len(comps))
 	}
@@ -39,7 +42,7 @@ func TestBuildComponents_ButtonsAndSelect(t *testing.T) {
 }
 
 func TestBuildComponents_LinkButton(t *testing.T) {
-	comps, err := buildComponents([][]messaging.Button{
+	comps, _, err := buildComponents([][]messaging.Button{
 		{{Text: "Docs", Style: "link", URL: "https://example.com"}},
 	}, nil)
 	if err != nil {
@@ -57,9 +60,70 @@ func TestBuildComponents_TooManyRows(t *testing.T) {
 	for i := 0; i < 6; i++ {
 		buttons = append(buttons, []messaging.Button{{Text: "B", Data: "d"}})
 	}
-	_, err := buildComponents(buttons, nil)
+	_, _, err := buildComponents(buttons, nil)
 	if err == nil {
 		t.Fatal("expected error")
+	}
+}
+
+func TestBuildComponents_ModalButton(t *testing.T) {
+	_, modals, err := buildComponents([][]messaging.Button{{
+		{
+			Text: "Log feed",
+			Data: "feed_btn",
+			Modal: &messaging.ModalSpec{
+				ID:    "feed_modal",
+				Title: "Log a feed",
+				Fields: []messaging.ModalField{
+					{ID: "side", Label: "Side", Required: true},
+					{ID: "notes", Label: "Notes", Style: "paragraph"},
+				},
+			},
+		},
+	}}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	spec, ok := modals["feed_btn"]
+	if !ok || spec.ID != "feed_modal" || len(spec.Fields) != 2 {
+		t.Fatalf("modals=%+v", modals)
+	}
+	resp, err := modalResponse(spec)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.Type != discordgo.InteractionResponseModal || resp.Data.Title != "Log a feed" {
+		t.Fatalf("resp=%+v", resp)
+	}
+}
+
+func TestBuildComponents_UserSelect(t *testing.T) {
+	comps, _, err := buildComponents(nil, []messaging.SelectMenu{{
+		ID:   "who",
+		Type: "user",
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	row := comps[0].(discordgo.ActionsRow)
+	menu := row.Components[0].(discordgo.SelectMenu)
+	if menu.MenuType != discordgo.UserSelectMenu || len(menu.Options) != 0 {
+		t.Fatalf("menu=%+v", menu)
+	}
+}
+
+func TestFormatModalPending(t *testing.T) {
+	got := formatModalPending(discordgo.ModalSubmitInteractionData{
+		CustomID: "feed_modal",
+		Components: []discordgo.MessageComponent{
+			discordgo.ActionsRow{Components: []discordgo.MessageComponent{
+				discordgo.TextInput{CustomID: "side", Value: "left"},
+				discordgo.TextInput{CustomID: "notes", Value: "ok"},
+			}},
+		},
+	})
+	if !strings.Contains(got, `Modal "feed_modal" submitted`) || !strings.Contains(got, `side="left"`) {
+		t.Fatalf("got=%q", got)
 	}
 }
 

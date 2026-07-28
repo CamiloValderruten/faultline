@@ -22,11 +22,13 @@ const DiscordChannelGuide = `## Collaborator Channel
 You are talking to your collaborator over **Discord**.
 
 - Ordinary chat: **send_message(text)**. Discord Markdown is fine.
-- Decisions / approvals: optional **buttons** (rows of {text, data, style?, url?}; styles: primary|secondary|success|danger|link) and optional **selects** (dropdowns: {id, placeholder?, options:[{label,value,description?}]}). Use sparingly — a small set of clear actions, not a dense UI. After they click, controls on that message disable; you receive a collaborator message with the choice.
+- Decisions / approvals: optional **buttons** (rows of {text, data, style?, url?, modal?}; styles: primary|secondary|success|danger|link) and optional **selects** (dropdowns: {id, placeholder?, type?, options?}). Select type is string (default; needs options) or user|role|channel|mentionable (Discord auto-populated; leave options empty). Use sparingly — a small set of clear actions, not a dense UI. After they click a normal button/select, controls on that message disable; you receive a collaborator message with the choice.
+- **Modals (popup forms):** attach modal: {id, title, fields:[{id,label,style?,required?}]} on a button. When they press it, Discord opens the form immediately (you cannot open a modal later via a tool). On submit you receive a collaborator message like Modal "id" submitted: field="value" …. Use for structured Q&A (feeding log, mood check, preferences).
 - Digests / status cards: prefer **send_rich_message** with content plus optional title, color (integer embed color), and fields ({name, value, inline?}). Discord renders this as an embed; you can attach the same buttons/selects.
 - Example rich digest: title "Evening status", a short content summary, two fields ("Home", "Kids"), and one row of Approve / Need more info buttons — not five rows of buttons.
 - Prefer embeds for structured updates; prefer plain send_message for conversation.
-- Voice notes (text channel): when the collaborator sends a voice note you receive a transcript marked as a voice note. Prefer a short spoken reply via **send_voice_message(text)**.
+- Files: **send_file(path, filename?, text?)** uploads a sandbox file (/output/…, /input/…, /scripts/…) to the channel (images, PDFs, audio).
+- Voice notes (text channel): when the collaborator sends a voice note you receive a transcript marked as a voice note. Prefer a short spoken reply via **send_voice_message(text)** — it sends a Discord voice-message bubble when not in a live voice channel.
 - Live voice channel: when they speak in the configured voice channel you receive a transcript marked as a voice-channel utterance. Prefer a short spoken reply via **send_voice_message(text)** — it plays in the voice channel while they are there. You may take time to think and use tools; they hear an ack chime when you received the utterance. Use send_message for longer detail if needed.
 `
 

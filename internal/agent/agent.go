@@ -162,6 +162,17 @@ func (a *Agent) gatherCollaboratorGuide() string {
 	return ""
 }
 
+// signalTyping asks the collaborator channel to show a typing indicator
+// while the LLM generates. Adapters that do not implement Typing are no-ops.
+func (a *Agent) signalTyping() {
+	type typer interface {
+		Typing()
+	}
+	if t, ok := a.operator.(typer); ok {
+		t.Typing()
+	}
+}
+
 // Close releases the resources owned by the agent. Adapters whose
 // lifecycles outlive the agent (the Sandbox, ChatLogger, etc.) are
 // closed by the composition root, not here.
@@ -505,6 +516,7 @@ func (a *Agent) Run(ctx context.Context, shutdownCh <-chan struct{}) error {
 		// reasoning. Any collaborator messages that arrive during generation
 		// are handled after the response comes back (see below).
 		a.setPhase(PhaseGenerating)
+		a.signalTyping()
 		chatStart := time.Now()
 		resp, err := a.chat.Chat(ctx, a.chatReq(messages, toolDefs))
 		chatLatency := time.Since(chatStart)

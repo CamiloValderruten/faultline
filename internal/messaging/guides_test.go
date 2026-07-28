@@ -29,4 +29,10 @@ func TestChannelGuides(t *testing.T) {
 	if !strings.Contains(DiscordChannelGuide, "sparingly") {
 		t.Fatal("discord guide should discourage button spam")
 	}
+	if !strings.Contains(DiscordChannelGuide, "send_file") {
+		t.Fatal("discord guide should mention send_file")
+	}
+	if !strings.Contains(DiscordChannelGuide, "Modals") {
+		t.Fatal("discord guide should mention modals")
+	}
 }
