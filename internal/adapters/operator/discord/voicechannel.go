@@ -118,6 +118,32 @@ func voiceConnReady(vc *discordgo.VoiceConnection) bool {
 	return vc != nil && vc.Status == discordgo.VoiceConnectionStatusReady
 }
 
+func voiceConnPlayable(vc *discordgo.VoiceConnection) bool {
+	return vc != nil &&
+		vc.Status != discordgo.VoiceConnectionStatusDead &&
+		vc.OpusSend != nil
+}
+
+func (b *Bot) operatorInConfiguredVoice() bool {
+	if !b.voiceConfigured() {
+		return false
+	}
+	ch, err := b.session.Channel(b.voiceChannelID)
+	if err != nil || ch == nil || ch.GuildID == "" {
+		return false
+	}
+	g, err := b.session.State.Guild(ch.GuildID)
+	if err != nil || g == nil {
+		return false
+	}
+	for _, vs := range g.VoiceStates {
+		if vs != nil && vs.UserID == b.operatorUserID && vs.ChannelID == b.voiceChannelID {
+			return true
+		}
+	}
+	return false
+}
+
 func (b *Bot) inVoiceChannel() bool {
 	b.voiceMu.Lock()
 	defer b.voiceMu.Unlock()
@@ -412,9 +438,13 @@ func (b *Bot) playOggOpus(vc *discordgo.VoiceConnection, ogg []byte) error {
 	ticker := time.NewTicker(20 * time.Millisecond)
 	defer ticker.Stop()
 
+	pages := 0
 	for {
 		page, _, err := reader.ParseNextPage()
 		if err == io.EOF {
+			if pages == 0 {
+				return fmt.Errorf("ogg opus has no audio pages")
+			}
 			return nil
 		}
 		if err != nil {
@@ -432,14 +462,16 @@ func (b *Bot) playOggOpus(vc *discordgo.VoiceConnection, ogg []byte) error {
 		}
 		select {
 		case vc.OpusSend <- page:
+			pages++
 		case <-time.After(2 * time.Second):
 			return fmt.Errorf("opus send timed out")
 		}
 	}
 }
 
-// SendVoice synthesizes speech and plays it in the voice channel when joined,
-// otherwise uploads an audio attachment to the text channel.
+// SendVoice synthesizes speech and plays it in the voice channel when the
+// operator is in the configured VC (or the bot is already connected).
+// Otherwise it uploads an audio attachment to the text channel.
 func (b *Bot) SendVoice(text string) error {
 	text = strings.TrimSpace(text)
 	if text == "" {
@@ -456,22 +488,32 @@ func (b *Bot) SendVoice(text string) error {
 
 	b.voiceMu.Lock()
 	vc := b.vc
-	ready := voiceConnReady(vc)
+	status := discordgo.VoiceConnectionStatusDead
+	if vc != nil {
+		status = vc.Status
+	}
 	b.voiceMu.Unlock()
 
-	if ready {
-		if oggSp, ok := b.speech.(oggSpeaker); ok {
-			ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
-			defer cancel()
-			ogg, err := oggSp.SpeakOggOpus(ctx, spoken)
-			if err != nil {
-				return fmt.Errorf("tts ogg: %w", err)
-			}
-			if err := b.playOggOpus(vc, ogg); err != nil {
-				return fmt.Errorf("play voice reply: %w", err)
-			}
-			return nil
+	wantVC := voiceConnPlayable(vc) || b.operatorInConfiguredVoice()
+	if wantVC {
+		if !voiceConnPlayable(vc) {
+			return fmt.Errorf("operator is in the voice channel but the bot is not connected (status=%v); cannot play spoken reply", status)
 		}
+		oggSp, ok := b.speech.(oggSpeaker)
+		if !ok {
+			return fmt.Errorf("voice channel TTS requires Ogg/Opus (SpeakOggOpus) support")
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+		defer cancel()
+		ogg, err := oggSp.SpeakOggOpus(ctx, spoken)
+		if err != nil {
+			return fmt.Errorf("tts ogg: %w", err)
+		}
+		b.logger.Info("playing voice reply in voice channel", "bytes", len(ogg), "chars", len(spoken))
+		if err := b.playOggOpus(vc, ogg); err != nil {
+			return fmt.Errorf("play voice reply: %w", err)
+		}
+		return nil
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
@@ -485,6 +527,7 @@ func (b *Bot) SendVoice(text string) error {
 		name = "reply.audio"
 	}
 
+	b.logger.Info("sending voice reply as chat attachment", "bytes", len(audio), "chars", len(spoken))
 	_, err = b.session.ChannelMessageSendComplex(b.channelID, &discordgo.MessageSend{
 		Files: []*discordgo.File{{
 			Name:        name,
