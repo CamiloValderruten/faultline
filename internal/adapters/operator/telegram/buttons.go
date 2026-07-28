@@ -5,60 +5,65 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"github.com/CamiloValderruten/faultline/internal/messaging"
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 )
 
-// Button is one inline keyboard button. Data is sent back as callback_data.
-type Button struct {
-	Text string
-	Data string
-}
-
 const (
-	maxButtonsTotal     = 8
+	maxButtonsTotal      = 8
 	maxCallbackDataBytes = 64
 )
 
 // validateButtons enforces Telegram limits. Returns a copy with trimmed fields.
-func validateButtons(rows [][]Button) ([][]Button, error) {
+func validateButtons(rows [][]messaging.Button) ([][]messaging.Button, error) {
 	if len(rows) == 0 {
 		return nil, fmt.Errorf("buttons required")
 	}
 	total := 0
-	out := make([][]Button, 0, len(rows))
+	out := make([][]messaging.Button, 0, len(rows))
 	for i, row := range rows {
 		if len(row) == 0 {
 			return nil, fmt.Errorf("buttons row %d is empty", i)
 		}
-		outRow := make([]Button, 0, len(row))
+		outRow := make([]messaging.Button, 0, len(row))
 		for j, b := range row {
 			text := strings.TrimSpace(b.Text)
 			data := strings.TrimSpace(b.Data)
+			url := strings.TrimSpace(b.URL)
 			if text == "" {
 				return nil, fmt.Errorf("buttons[%d][%d].text is required", i, j)
 			}
-			if data == "" {
-				return nil, fmt.Errorf("buttons[%d][%d].data is required", i, j)
+			if url == "" && data == "" {
+				return nil, fmt.Errorf("buttons[%d][%d].data or url is required", i, j)
 			}
-			if len(data) > maxCallbackDataBytes {
+			if url == "" && len(data) > maxCallbackDataBytes {
 				return nil, fmt.Errorf("buttons[%d][%d].data exceeds %d bytes", i, j, maxCallbackDataBytes)
 			}
 			total++
 			if total > maxButtonsTotal {
 				return nil, fmt.Errorf("at most %d buttons allowed", maxButtonsTotal)
 			}
-			outRow = append(outRow, Button{Text: text, Data: data})
+			outRow = append(outRow, messaging.Button{
+				Text:  text,
+				Data:  data,
+				Style: strings.TrimSpace(b.Style),
+				URL:   url,
+			})
 		}
 		out = append(out, outRow)
 	}
 	return out, nil
 }
 
-func buildInlineKeyboard(rows [][]Button) tgbotapi.InlineKeyboardMarkup {
+func buildInlineKeyboard(rows [][]messaging.Button) tgbotapi.InlineKeyboardMarkup {
 	kb := make([][]tgbotapi.InlineKeyboardButton, 0, len(rows))
 	for _, row := range rows {
 		kbRow := make([]tgbotapi.InlineKeyboardButton, 0, len(row))
 		for _, b := range row {
+			if b.URL != "" {
+				kbRow = append(kbRow, tgbotapi.NewInlineKeyboardButtonURL(b.Text, b.URL))
+				continue
+			}
 			kbRow = append(kbRow, tgbotapi.NewInlineKeyboardButtonData(b.Text, b.Data))
 		}
 		kb = append(kb, kbRow)

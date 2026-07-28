@@ -7,6 +7,8 @@ import (
 	"io"
 	"net/http"
 	"strings"
+
+	"github.com/CamiloValderruten/faultline/internal/messaging"
 )
 
 const (
@@ -15,9 +17,25 @@ const (
 	maxRichContentLen = 32000
 )
 
-// SendRich sends a digest-style rich message via Bot API sendRichMessage.
-// On any failure (unsupported API, network, size), falls back to Send().
-func (t *Bot) SendRich(content string) error {
+// SendRich sends a structured digest. Title/fields/selects are flattened to
+// markdown; Discord-only styles are ignored. Buttons use an inline keyboard
+// (rich API has no components), otherwise Bot API sendRichMessage is tried
+// with markdown fallback to Send.
+func (t *Bot) SendRich(msg messaging.RichMessage) error {
+	body := messaging.FlattenText(msg)
+	if body == "" && len(msg.Buttons) == 0 {
+		return fmt.Errorf("rich content is required")
+	}
+	if len(msg.Buttons) > 0 {
+		if body == "" {
+			body = "(choose an option)"
+		}
+		return t.SendWithButtons(body, msg.Buttons)
+	}
+	return t.sendRichDigest(body)
+}
+
+func (t *Bot) sendRichDigest(content string) error {
 	content = strings.TrimSpace(content)
 	if content == "" {
 		return fmt.Errorf("rich content is required")

@@ -85,15 +85,26 @@ repetition_penalty = 0.0
 # thinking = "disabled"
 
 # ---------------------------------------------------------------------------
-# [telegram] — optional collaborator messaging.
+# [telegram] — optional collaborator messaging (mutually exclusive with [discord]).
 #
-# When both fields are set, the agent advertises the send_message tool and
-# accepts incoming messages from the configured chat ID. Leave both empty to
-# disable; the agent runs without a collaborator channel.
+# When both fields are set, the agent advertises send_message / send_rich_message
+# and accepts incoming messages from the configured chat ID. Leave both empty to
+# disable; the agent runs without a collaborator channel. Do not enable Telegram
+# and Discord at the same time.
 # ---------------------------------------------------------------------------
 [telegram]
 token   = ""
 chat_id = 0
+
+# ---------------------------------------------------------------------------
+# [discord] — optional Discord collaborator channel (mutually exclusive with
+# [telegram]). Create a bot at https://discord.com/developers/applications,
+# invite it with Send Messages + Read Message History + Message Content Intent,
+# then set the target channel snowflake ID.
+# ---------------------------------------------------------------------------
+[discord]
+token      = ""
+channel_id = ""
 
 # ---------------------------------------------------------------------------
 # [log] — logging.

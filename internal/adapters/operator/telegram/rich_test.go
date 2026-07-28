@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/CamiloValderruten/faultline/internal/messaging"
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 )
 
@@ -80,7 +81,7 @@ func TestSendRich_FallsBackOnAPIError(t *testing.T) {
 	// Oversized content skips rich API and goes straight to Send — without
 	// a working BotAPI this returns an error from Send, proving the branch.
 	long := strings.Repeat("a", maxRichContentLen+1)
-	if err := bot.SendRich(long); err == nil {
+	if err := bot.SendRich(messaging.RichMessage{Content: long}); err == nil {
 		// Send may fail without network; if somehow succeeds that's fine too.
 		t.Log("SendRich oversized returned nil (unexpected without API, ok if mocked elsewhere)")
 	}
@@ -88,7 +89,7 @@ func TestSendRich_FallsBackOnAPIError(t *testing.T) {
 
 func TestSendRich_Empty(t *testing.T) {
 	bot := &Bot{logger: slog.Default()}
-	if err := bot.SendRich("  "); err == nil {
+	if err := bot.SendRich(messaging.RichMessage{Content: "  "}); err == nil {
 		t.Fatal("expected error")
 	}
 }

@@ -15,6 +15,7 @@ type Config struct {
 	API      APIConfig      `toml:"api"`
 	Agent    AgentConfig    `toml:"agent"`
 	Telegram TelegramConfig `toml:"telegram"`
+	Discord  DiscordConfig  `toml:"discord"`
 	Log      LogConfig      `toml:"log"`
 	Sandbox  SandboxConfig  `toml:"sandbox"`
 	Email    EmailConfig    `toml:"email"`
@@ -129,6 +130,13 @@ type TelegramConfig struct {
 	ChatID int64  `toml:"chat_id"`
 }
 
+// DiscordConfig holds optional Discord bot settings. Exactly one of
+// Telegram or Discord may be enabled as the collaborator channel.
+type DiscordConfig struct {
+	Token     string `toml:"token"`
+	ChannelID string `toml:"channel_id"`
+}
+
 // LogConfig holds logging settings.
 type LogConfig struct {
 	Level string `toml:"level"`
@@ -169,6 +177,11 @@ type LimitsConfig struct {
 // Enabled returns true if Telegram is configured.
 func (t TelegramConfig) Enabled() bool {
 	return t.Token != "" && t.ChatID != 0
+}
+
+// Enabled returns true if Discord is configured.
+func (d DiscordConfig) Enabled() bool {
+	return strings.TrimSpace(d.Token) != "" && strings.TrimSpace(d.ChannelID) != ""
 }
 
 // UpdateConfig holds settings for the automatic self-update goroutine.
@@ -682,6 +695,10 @@ func Load(path string) (*Config, error) {
 	}
 	if cfg.Admin.SessionTTL.Duration() <= 0 {
 		cfg.Admin.SessionTTL = duration(12 * time.Hour)
+	}
+
+	if cfg.Telegram.Enabled() && cfg.Discord.Enabled() {
+		return nil, fmt.Errorf("configure only one collaborator channel: [telegram] or [discord], not both")
 	}
 
 	return cfg, nil

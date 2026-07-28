@@ -11,6 +11,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/CamiloValderruten/faultline/internal/messaging"
 	tgmd "github.com/Mad-Pixels/goldmark-tgmd"
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 )
@@ -207,7 +208,7 @@ func (t *Bot) Send(text string) error {
 
 // SendWithButtons sends a text message with an inline keyboard.
 // Markup is attached only to the last chunk. buttons must be non-empty.
-func (t *Bot) SendWithButtons(text string, buttons [][]Button) error {
+func (t *Bot) SendWithButtons(text string, buttons [][]messaging.Button) error {
 	rows, err := validateButtons(buttons)
 	if err != nil {
 		return err

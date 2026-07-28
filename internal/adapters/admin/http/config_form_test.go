@@ -15,7 +15,7 @@ func TestBuildConfigForm_CoversEverySection(t *testing.T) {
 	form := BuildConfigForm(cfg)
 
 	wantSections := []string{
-		"api", "agent", "telegram", "log", "sandbox", "email",
+		"api", "agent", "telegram", "discord", "log", "sandbox", "email",
 		"limits", "update", "mcp", "oauth", "embeddings", "skills",
 		"subagent", "admin",
 	}
@@ -52,10 +52,12 @@ func TestBuildConfigForm_ClassifiesFieldsByType(t *testing.T) {
 		// strings
 		{"api.url", KindString},
 		{"agent.memory_dir", KindString},
+		{"discord.channel_id", KindString},
 
 		// secrets
 		{"api.key", KindSecret},
 		{"telegram.token", KindSecret},
+		{"discord.token", KindSecret},
 		{"email.password", KindSecret},
 		{"embeddings.api_key", KindSecret},
 

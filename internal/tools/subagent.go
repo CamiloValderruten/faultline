@@ -294,7 +294,7 @@ func (te *Executor) subagentWait(ctx context.Context, argsJSON string) string {
 			<-done
 			return "subagent_wait: canceled."
 		case <-ticker.C:
-			if te.telegram != nil && te.telegram.HasPending() {
+			if te.messenger != nil && te.messenger.HasPending() {
 				cancel()
 				<-done
 				return fmt.Sprintf("subagent_wait: operator message arrived; subagent %s is still running. Drain the operator message, then call subagent_wait again or subagent_status to check progress.", args.WorkID)

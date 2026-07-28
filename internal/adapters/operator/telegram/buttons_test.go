@@ -5,11 +5,12 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/CamiloValderruten/faultline/internal/messaging"
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 )
 
 func TestValidateButtons_OK(t *testing.T) {
-	rows, err := validateButtons([][]Button{
+	rows, err := validateButtons([][]messaging.Button{
 		{{Text: "Approve", Data: "approve"}, {Text: "Deny", Data: "deny"}},
 	})
 	if err != nil {
@@ -21,18 +22,18 @@ func TestValidateButtons_OK(t *testing.T) {
 }
 
 func TestValidateButtons_TooMany(t *testing.T) {
-	var row []Button
+	var row []messaging.Button
 	for i := 0; i < 9; i++ {
-		row = append(row, Button{Text: "B", Data: "d"})
+		row = append(row, messaging.Button{Text: "B", Data: "d"})
 	}
-	_, err := validateButtons([][]Button{row})
+	_, err := validateButtons([][]messaging.Button{row})
 	if err == nil {
 		t.Fatal("expected error for >8 buttons")
 	}
 }
 
 func TestValidateButtons_CallbackDataTooLong(t *testing.T) {
-	_, err := validateButtons([][]Button{
+	_, err := validateButtons([][]messaging.Button{
 		{{Text: "X", Data: strings.Repeat("a", 65)}},
 	})
 	if err == nil {
@@ -41,14 +42,14 @@ func TestValidateButtons_CallbackDataTooLong(t *testing.T) {
 }
 
 func TestValidateButtons_EmptyText(t *testing.T) {
-	_, err := validateButtons([][]Button{{{Text: " ", Data: "ok"}}})
+	_, err := validateButtons([][]messaging.Button{{{Text: " ", Data: "ok"}}})
 	if err == nil {
 		t.Fatal("expected error for empty text")
 	}
 }
 
 func TestBuildInlineKeyboard(t *testing.T) {
-	kb := buildInlineKeyboard([][]Button{
+	kb := buildInlineKeyboard([][]messaging.Button{
 		{{Text: "A", Data: "a"}},
 		{{Text: "B", Data: "b"}, {Text: "C", Data: "c"}},
 	})

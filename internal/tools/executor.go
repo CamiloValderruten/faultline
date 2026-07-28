@@ -24,11 +24,11 @@ import (
 	"github.com/CamiloValderruten/faultline/internal/adapters/llm/kobold"
 	"github.com/CamiloValderruten/faultline/internal/adapters/mcp"
 	"github.com/CamiloValderruten/faultline/internal/adapters/memory/fs"
-	"github.com/CamiloValderruten/faultline/internal/adapters/operator/telegram"
 	"github.com/CamiloValderruten/faultline/internal/adapters/sandbox/docker"
 	skillsfs "github.com/CamiloValderruten/faultline/internal/adapters/skills/fs"
 	"github.com/CamiloValderruten/faultline/internal/config"
 	"github.com/CamiloValderruten/faultline/internal/llm"
+	"github.com/CamiloValderruten/faultline/internal/messaging"
 	"github.com/CamiloValderruten/faultline/internal/schedule"
 	"github.com/CamiloValderruten/faultline/internal/search/bm25"
 	"github.com/CamiloValderruten/faultline/internal/search/vector"
@@ -643,15 +643,16 @@ func (te *Executor) ToolDefs() []llm.Tool {
 		)
 	}
 
-	if te.telegram != nil {
+	if te.messenger != nil {
 		tools = append(tools,
 			llm.Tool{
 				Type: llm.ToolTypeFunction,
 				Function: &llm.FunctionDef{
 					Name: "send_message",
-					Description: "Send a message to your collaborator via Telegram. Use for chat, questions, and progress. " +
+					Description: "Send a message to your collaborator. Use for chat, questions, and progress. " +
 						"Optional inline buttons are for decisions/approvals (not every reply). " +
-						"When the collaborator taps a button, you receive it as a collaborator message. " +
+						"Optional select menus are Discord dropdowns (ignored/flattened on Telegram). " +
+						"When the collaborator taps a button or picks a select option, you receive it as a collaborator message. " +
 						"Your collaborator may not respond immediately.",
 					Parameters: map[string]interface{}{
 						"type": "object",
@@ -662,9 +663,11 @@ func (te *Executor) ToolDefs() []llm.Tool {
 							},
 							"buttons": map[string]interface{}{
 								"type": "array",
-								"description": "Optional inline keyboard: array of rows, each row an array of " +
-									"{text, data} buttons. Max 8 buttons total; data max 64 bytes. " +
-									"Example: [[{\"text\":\"Approve\",\"data\":\"approve\"},{\"text\":\"Deny\",\"data\":\"deny\"}]].",
+								"description": "Optional buttons: array of rows, each row an array of " +
+									"{text, data, style?, url?} buttons. data is the callback id; style is " +
+									"primary|secondary|success|danger|link (Discord); url for link buttons. " +
+									"Example: [[{\"text\":\"Approve\",\"data\":\"approve\",\"style\":\"success\"}," +
+									"{\"text\":\"Deny\",\"data\":\"deny\",\"style\":\"danger\"}]].",
 								"items": map[string]interface{}{
 									"type": "array",
 									"items": map[string]interface{}{
@@ -676,11 +679,43 @@ func (te *Executor) ToolDefs() []llm.Tool {
 											},
 											"data": map[string]interface{}{
 												"type":        "string",
-												"description": "Callback data returned when pressed (max 64 bytes).",
+												"description": "Callback id returned when pressed.",
+											},
+											"style": map[string]interface{}{
+												"type":        "string",
+												"description": "Discord button style: primary|secondary|success|danger|link.",
+											},
+											"url": map[string]interface{}{
+												"type":        "string",
+												"description": "URL for link-style buttons.",
 											},
 										},
-										"required": []string{"text", "data"},
+										"required": []string{"text"},
 									},
+								},
+							},
+							"selects": map[string]interface{}{
+								"type":        "array",
+								"description": "Optional Discord select menus: [{id, placeholder?, options:[{label,value,description?}]}].",
+								"items": map[string]interface{}{
+									"type": "object",
+									"properties": map[string]interface{}{
+										"id":          map[string]interface{}{"type": "string"},
+										"placeholder": map[string]interface{}{"type": "string"},
+										"options": map[string]interface{}{
+											"type": "array",
+											"items": map[string]interface{}{
+												"type": "object",
+												"properties": map[string]interface{}{
+													"label":       map[string]interface{}{"type": "string"},
+													"value":       map[string]interface{}{"type": "string"},
+													"description": map[string]interface{}{"type": "string"},
+												},
+												"required": []string{"label", "value"},
+											},
+										},
+									},
+									"required": []string{"id", "options"},
 								},
 							},
 						},
@@ -692,15 +727,75 @@ func (te *Executor) ToolDefs() []llm.Tool {
 				Type: llm.ToolTypeFunction,
 				Function: &llm.FunctionDef{
 					Name: "send_rich_message",
-					Description: "Send a structured digest to Telegram (daily summary, Luca status, household card). " +
-						"Prefer this over send_message for formatted digests with headings/lists. " +
-						"Do not use for ordinary chat. Falls back to plain Markdown if rich API is unavailable.",
+					Description: "Send a structured digest to your collaborator (daily summary, status card). " +
+						"Prefer this over send_message for formatted digests with headings/lists/fields. " +
+						"On Discord this becomes an embed plus optional buttons/selects; on Telegram it " +
+						"uses rich markdown (or buttons when provided). Do not use for ordinary chat.",
 					Parameters: map[string]interface{}{
 						"type": "object",
 						"properties": map[string]interface{}{
 							"content": map[string]interface{}{
-								"type": "string",
-								"description": "Digest content. HTML or Markdown-style text with headings and lists works well.",
+								"type":        "string",
+								"description": "Main body text (Markdown). Discord embed description / Telegram body.",
+							},
+							"title": map[string]interface{}{
+								"type":        "string",
+								"description": "Optional title (Discord embed title).",
+							},
+							"color": map[string]interface{}{
+								"type":        "integer",
+								"description": "Optional Discord embed color as integer (e.g. 5763719 for green).",
+							},
+							"fields": map[string]interface{}{
+								"type": "array",
+								"items": map[string]interface{}{
+									"type": "object",
+									"properties": map[string]interface{}{
+										"name":   map[string]interface{}{"type": "string"},
+										"value":  map[string]interface{}{"type": "string"},
+										"inline": map[string]interface{}{"type": "boolean"},
+									},
+									"required": []string{"name", "value"},
+								},
+							},
+							"buttons": map[string]interface{}{
+								"type": "array",
+								"items": map[string]interface{}{
+									"type": "array",
+									"items": map[string]interface{}{
+										"type": "object",
+										"properties": map[string]interface{}{
+											"text":  map[string]interface{}{"type": "string"},
+											"data":  map[string]interface{}{"type": "string"},
+											"style": map[string]interface{}{"type": "string"},
+											"url":   map[string]interface{}{"type": "string"},
+										},
+										"required": []string{"text"},
+									},
+								},
+							},
+							"selects": map[string]interface{}{
+								"type": "array",
+								"items": map[string]interface{}{
+									"type": "object",
+									"properties": map[string]interface{}{
+										"id":          map[string]interface{}{"type": "string"},
+										"placeholder": map[string]interface{}{"type": "string"},
+										"options": map[string]interface{}{
+											"type": "array",
+											"items": map[string]interface{}{
+												"type": "object",
+												"properties": map[string]interface{}{
+													"label":       map[string]interface{}{"type": "string"},
+													"value":       map[string]interface{}{"type": "string"},
+													"description": map[string]interface{}{"type": "string"},
+												},
+												"required": []string{"label", "value"},
+											},
+										},
+									},
+									"required": []string{"id", "options"},
+								},
 							},
 						},
 						"required": []string{"content"},
@@ -1118,7 +1213,7 @@ type Executor struct {
 	mode                Mode
 	memory              *fs.Store
 	index               *bm25.Index
-	telegram            *telegram.Bot
+	messenger           messaging.Messenger // collaborator channel (Telegram or Discord); nil when disabled
 	sandbox             *docker.Sandbox
 	email               *config.EmailConfig
 	kobold              *kobold.Client  // optional; nil means no perf info in context_status
@@ -1170,7 +1265,7 @@ type Executor struct {
 // Multiple Executor instances coexist when subagent support is
 // enabled: the primary agent's Executor (Mode = ModePrimary) and one
 // Executor per active subagent (Mode = ModeSubagent). All instances
-// share the WebCache, Memory, Index, VectorIndex, Sandbox, Telegram,
+// share the WebCache, Memory, Index, VectorIndex, Sandbox, Messenger,
 // Updater, Embedder, and Skills pointers; per-instance fields like
 // CurrentTokens are not shared.
 //
@@ -1181,7 +1276,7 @@ type Deps struct {
 	Memory               *fs.Store
 	Index                *bm25.Index
 	VectorIndex          *vector.Index
-	Telegram             *telegram.Bot
+	Messenger            messaging.Messenger
 	Sandbox              *docker.Sandbox
 	Email                *config.EmailConfig
 	Kobold               *kobold.Client
@@ -1247,8 +1342,8 @@ func New(deps Deps) *Executor {
 	if deps.Sandbox != nil {
 		deps.Sandbox.SetOutputLimit(deps.Limits.SandboxOutputChars)
 	}
-	if deps.MCPApprovalNotifier == nil && deps.Telegram != nil {
-		deps.MCPApprovalNotifier = deps.Telegram.Send
+	if deps.MCPApprovalNotifier == nil && deps.Messenger != nil {
+		deps.MCPApprovalNotifier = deps.Messenger.Send
 	}
 	skillsRoot := ""
 	if deps.Skills != nil {
@@ -1258,7 +1353,7 @@ func New(deps Deps) *Executor {
 		mode:                deps.Mode,
 		memory:              deps.Memory,
 		index:               deps.Index,
-		telegram:            deps.Telegram,
+		messenger:           deps.Messenger,
 		sandbox:             deps.Sandbox,
 		email:               deps.Email,
 		kobold:              deps.Kobold,
@@ -2966,151 +3061,6 @@ func (te *Executor) emailFetch(argsJSON string) string {
 	// Subject + From + dates in overviews are also attacker-controllable.
 	source := fmt.Sprintf("email %s overviews (limit %d)", args.Folder, args.Limit)
 	return wrapUntrusted(source, result)
-}
-
-func (te *Executor) sendMessage(argsJSON string) string {
-	var args struct {
-		Text    string `json:"text"`
-		Buttons [][]struct {
-			Text string `json:"text"`
-			Data string `json:"data"`
-		} `json:"buttons"`
-	}
-	if err := json.Unmarshal([]byte(argsJSON), &args); err != nil {
-		return fmt.Sprintf("Error parsing arguments: %s", err)
-	}
-
-	if args.Text == "" {
-		return "Error: text is required"
-	}
-
-	if te.telegram == nil {
-		return "Error: messaging is not configured. No collaborator channel available."
-	}
-
-	if len(args.Buttons) == 0 {
-		if err := te.telegram.Send(args.Text); err != nil {
-			return fmt.Sprintf("Error sending message: %s", err)
-		}
-		te.logger.Info("message sent to collaborator", "length", len(args.Text))
-		return "Message sent to collaborator."
-	}
-
-	btnRows := make([][]telegram.Button, 0, len(args.Buttons))
-	for _, row := range args.Buttons {
-		out := make([]telegram.Button, 0, len(row))
-		for _, b := range row {
-			out = append(out, telegram.Button{Text: b.Text, Data: b.Data})
-		}
-		btnRows = append(btnRows, out)
-	}
-	if err := te.telegram.SendWithButtons(args.Text, btnRows); err != nil {
-		return fmt.Sprintf("Error sending message: %s", err)
-	}
-	te.logger.Info("message with buttons sent to collaborator",
-		"length", len(args.Text),
-		"button_rows", len(btnRows),
-	)
-	return "Message sent to collaborator."
-}
-
-func (te *Executor) sendRichMessage(argsJSON string) string {
-	var args struct {
-		Content string `json:"content"`
-	}
-	if err := json.Unmarshal([]byte(argsJSON), &args); err != nil {
-		return fmt.Sprintf("Error parsing arguments: %s", err)
-	}
-	if strings.TrimSpace(args.Content) == "" {
-		return "Error: content is required"
-	}
-	if te.telegram == nil {
-		return "Error: messaging is not configured. No collaborator channel available."
-	}
-	if err := te.telegram.SendRich(args.Content); err != nil {
-		return fmt.Sprintf("Error sending rich message: %s", err)
-	}
-	te.logger.Info("rich message sent to collaborator", "length", len(args.Content))
-	return "Rich message sent to collaborator."
-}
-
-// sleep suspends the agent for the requested number of seconds, returning
-// early if the operator sends a message or the process is shutting down.
-//
-// The handler does not drain the Telegram queue; it only peeks. The agent
-// loop's existing between-turn drain (Agent.injectPendingMessages) is the
-// single owner of the message queue. Returning to the agent loop with a
-// pending message in place causes it to be surfaced on the next turn just
-// like any message that arrived while no tool was running.
-//
-// Polling at 500ms is intentional: minute-scale sleeps don't care about
-// sub-second wake latency, and avoiding a notify channel keeps the
-// Telegram surface area small.
-func (te *Executor) sleep(ctx context.Context, argsJSON string) string {
-	var args struct {
-		Seconds int `json:"seconds"`
-	}
-	if err := json.Unmarshal([]byte(argsJSON), &args); err != nil {
-		return fmt.Sprintf("Error parsing arguments: %s", err)
-	}
-
-	if args.Seconds <= 0 {
-		return "Error: seconds must be a positive integer."
-	}
-
-	requested := time.Duration(args.Seconds) * time.Second
-	target := requested
-	var clampNote string
-	if te.maxSleep > 0 && target > te.maxSleep {
-		clampNote = fmt.Sprintf("Requested %s exceeds the configured maximum %s; clamped. ", requested, te.maxSleep)
-		target = te.maxSleep
-	}
-
-	// If a collaborator message is already queued at entry, do not sleep
-	// through it. The agent should respond before doing anything else.
-	if te.telegram != nil && te.telegram.HasPending() {
-		te.logger.Info("sleep skipped: collaborator message already pending",
-			"requested_s", args.Seconds)
-		return clampNote + "Did not sleep: a collaborator message is already pending. Handle it before sleeping."
-	}
-
-	te.logger.Info("sleep started", "requested_s", args.Seconds, "actual_s", int(target.Seconds()))
-
-	const pollInterval = 500 * time.Millisecond
-	start := time.Now()
-	deadline := start.Add(target)
-
-	timer := time.NewTimer(target)
-	defer timer.Stop()
-	ticker := time.NewTicker(pollInterval)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-ctx.Done():
-			elapsed := time.Since(start).Round(time.Second)
-			te.logger.Info("sleep interrupted by shutdown", "elapsed_s", int(elapsed.Seconds()))
-			return clampNote + fmt.Sprintf("Slept for %s then interrupted: shutdown.", elapsed)
-
-		case <-timer.C:
-			elapsed := time.Since(start).Round(time.Second)
-			te.logger.Info("sleep completed", "elapsed_s", int(elapsed.Seconds()))
-			return clampNote + fmt.Sprintf("Slept for %s.", elapsed)
-
-		case <-ticker.C:
-			if te.telegram != nil && te.telegram.HasPending() {
-				elapsed := time.Since(start).Round(time.Second)
-				te.logger.Info("sleep interrupted by collaborator message", "elapsed_s", int(elapsed.Seconds()))
-				return clampNote + fmt.Sprintf("Slept for %s then interrupted: collaborator message pending.", elapsed)
-			}
-			// Belt-and-braces: if the timer fires between selects somehow,
-			// still exit at the deadline rather than oversleeping.
-			if !time.Now().Before(deadline) {
-				elapsed := time.Since(start).Round(time.Second)
-				return clampNote + fmt.Sprintf("Slept for %s.", elapsed)
-			}
-		}
-	}
 }
 
 func (te *Executor) scheduleTask(argsJSON string) string {

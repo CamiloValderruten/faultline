@@ -304,3 +304,41 @@ func TestTelegramConfig_Enabled(t *testing.T) {
 		t.Error("token + chat_id should be Enabled")
 	}
 }
+
+func TestDiscordConfig_Enabled(t *testing.T) {
+	if (DiscordConfig{}).Enabled() {
+		t.Error("empty DiscordConfig should not be Enabled")
+	}
+	if (DiscordConfig{Token: "x"}).Enabled() {
+		t.Error("token without channel_id should not be Enabled")
+	}
+	if (DiscordConfig{ChannelID: "1"}).Enabled() {
+		t.Error("channel_id without token should not be Enabled")
+	}
+	if !(DiscordConfig{Token: "x", ChannelID: "1"}).Enabled() {
+		t.Error("token + channel_id should be Enabled")
+	}
+}
+
+func TestLoad_RejectsBothTelegramAndDiscord(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.toml")
+	content := `
+[api]
+url = "http://localhost/v1"
+model = "x"
+
+[telegram]
+token = "tg"
+chat_id = 1
+
+[discord]
+token = "dc"
+channel_id = "2"
+`
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Load(path); err == nil {
+		t.Fatal("expected error when both telegram and discord are enabled")
+	}
+}

@@ -11,12 +11,12 @@ import (
 	"github.com/CamiloValderruten/faultline/internal/adapters/llm/openai"
 	"github.com/CamiloValderruten/faultline/internal/adapters/mcp"
 	"github.com/CamiloValderruten/faultline/internal/adapters/memory/fs"
-	"github.com/CamiloValderruten/faultline/internal/adapters/operator/telegram"
 	"github.com/CamiloValderruten/faultline/internal/adapters/sandbox/docker"
 	skillsfs "github.com/CamiloValderruten/faultline/internal/adapters/skills/fs"
 	"github.com/CamiloValderruten/faultline/internal/adapters/state/jsonfile"
 	"github.com/CamiloValderruten/faultline/internal/agent"
 	"github.com/CamiloValderruten/faultline/internal/config"
+	"github.com/CamiloValderruten/faultline/internal/messaging"
 	"github.com/CamiloValderruten/faultline/internal/search/bm25"
 	"github.com/CamiloValderruten/faultline/internal/search/vector"
 	"github.com/CamiloValderruten/faultline/internal/subagent"
@@ -31,7 +31,7 @@ type subagentDeps struct {
 	Memory      *fs.Store
 	Index       *bm25.Index
 	VectorIndex *vector.Index
-	Telegram    *telegram.Bot
+	Messenger   messaging.Messenger
 	Sandbox     *docker.Sandbox
 	Email       *config.EmailConfig
 	Kobold      *kobold.Client
@@ -219,7 +219,7 @@ func runSubagent(
 		Memory:              deps.Memory,
 		Index:               deps.Index,
 		VectorIndex:         deps.VectorIndex,
-		Telegram:            deps.Telegram,
+		Messenger:           deps.Messenger,
 		Sandbox:             deps.Sandbox,
 		Email:               deps.Email,
 		Kobold:              deps.Kobold,

@@ -24,6 +24,7 @@ import (
 	"github.com/CamiloValderruten/faultline/internal/adapters/llm/openai"
 	"github.com/CamiloValderruten/faultline/internal/adapters/mcp"
 	"github.com/CamiloValderruten/faultline/internal/adapters/memory/fs"
+	"github.com/CamiloValderruten/faultline/internal/adapters/operator/discord"
 	"github.com/CamiloValderruten/faultline/internal/adapters/operator/telegram"
 	"github.com/CamiloValderruten/faultline/internal/adapters/sandbox/docker"
 	skillsfs "github.com/CamiloValderruten/faultline/internal/adapters/skills/fs"
@@ -31,6 +32,7 @@ import (
 	"github.com/CamiloValderruten/faultline/internal/agent"
 	"github.com/CamiloValderruten/faultline/internal/config"
 	"github.com/CamiloValderruten/faultline/internal/log"
+	"github.com/CamiloValderruten/faultline/internal/messaging"
 	"github.com/CamiloValderruten/faultline/internal/prompts"
 	"github.com/CamiloValderruten/faultline/internal/schedule"
 	"github.com/CamiloValderruten/faultline/internal/search/bm25"
@@ -190,11 +192,14 @@ func main() {
 		tokenizer = kb
 	}
 
-	// Telegram is optional. When disabled, the operator port stays nil.
+	// Collaborator messaging is optional. Exactly one of Telegram or
+	// Discord may be enabled (config.Load rejects both). When disabled,
+	// the operator/messenger ports stay nil.
 	var operator agent.Operator
-	var tg *telegram.Bot
-	if cfg.Telegram.Enabled() {
-		tg, err = telegram.New(cfg.Telegram.Token, cfg.Telegram.ChatID, logger)
+	var messenger messaging.Messenger
+	switch {
+	case cfg.Telegram.Enabled():
+		tg, err := telegram.New(cfg.Telegram.Token, cfg.Telegram.ChatID, logger)
 		if err != nil {
 			logger.Error("failed to connect telegram bot", "error", err)
 			os.Exit(1)
@@ -215,14 +220,42 @@ func main() {
 		}
 		go tg.Start(ctx)
 		logger.Info("telegram bot enabled", "chat_id", cfg.Telegram.ChatID)
-
-		// Send a startup ping so the collaborator knows the bot is alive.
 		if err := tg.Send("Agent starting up. I can hear you."); err != nil {
 			logger.Warn("failed to send startup ping", "error", err)
 		}
 		operator = tg
-	} else {
-		logger.Info("telegram not configured, messaging disabled")
+		messenger = tg
+	case cfg.Discord.Enabled():
+		dc, err := discord.New(cfg.Discord.Token, cfg.Discord.ChannelID, logger)
+		if err != nil {
+			logger.Error("failed to create discord bot", "error", err)
+			os.Exit(1)
+		}
+		if sb != nil {
+			mediaDir := filepath.Join(sb.Dir(), "input", "discord")
+			if err := os.MkdirAll(mediaDir, 0o755); err != nil {
+				logger.Warn("discord inbound media dir unavailable", "dir", mediaDir, "error", err)
+			} else {
+				dc.SetInboundMedia(discord.InboundMedia{
+					HostDir:         mediaDir,
+					ContainerPrefix: "/input/discord",
+				})
+				logger.Info("discord inbound images enabled", "dir", mediaDir, "container_prefix", "/input/discord")
+			}
+		}
+		go dc.Start(ctx)
+		logger.Info("discord bot enabled", "channel_id", cfg.Discord.ChannelID)
+		// Startup ping after a short delay so the gateway can connect.
+		go func() {
+			time.Sleep(2 * time.Second)
+			if err := dc.Send("Agent starting up. I can hear you."); err != nil {
+				logger.Warn("failed to send discord startup ping", "error", err)
+			}
+		}()
+		operator = dc
+		messenger = dc
+	default:
+		logger.Info("no collaborator channel configured (telegram/discord), messaging disabled")
 	}
 
 	// Email is optional and is only used by the email_fetch tool. The
@@ -348,7 +381,7 @@ func main() {
 			Memory:      memory,
 			Index:       index,
 			VectorIndex: vIndex,
-			Telegram:    tg,
+			Messenger:   messenger,
 			Sandbox:     sb,
 			Email:       email,
 			Kobold:      kb,
@@ -387,7 +420,7 @@ func main() {
 		Memory:               memory,
 		Index:                index,
 		VectorIndex:          vIndex,
-		Telegram:             tg,
+		Messenger:            messenger,
 		Sandbox:              sb,
 		Email:                email,
 		Kobold:               kb,
