@@ -149,6 +149,19 @@ func (a *Agent) gatherSubagentCatalog() []subagent.Catalog {
 	return out
 }
 
+// gatherCollaboratorGuide returns channel-specific messaging instructions
+// from the operator adapter (Telegram / Discord). Empty when no collaborator
+// channel is configured or the adapter does not implement ChannelGuide.
+func (a *Agent) gatherCollaboratorGuide() string {
+	type guider interface {
+		ChannelGuide() string
+	}
+	if g, ok := a.operator.(guider); ok {
+		return g.ChannelGuide()
+	}
+	return ""
+}
+
 // Close releases the resources owned by the agent. Adapters whose
 // lifecycles outlive the agent (the Sandbox, ChatLogger, etc.) are
 // closed by the composition root, not here.
@@ -660,12 +673,13 @@ func (a *Agent) initializeContext() ([]llm.Message, map[string]string, int, erro
 	memories := a.gatherContextMemories()
 	skillCatalog := a.gatherSkillCatalog()
 	subagentCatalog := a.gatherSubagentCatalog()
+	collaboratorGuide := a.gatherCollaboratorGuide()
 	now := time.Now()
 	basePrompt := prompts["system"]
 	if a.systemPromptOverride != "" {
 		basePrompt = a.systemPromptOverride
 	}
-	fullSystemPrompt := prompt.BuildCycleContext(basePrompt, memories, skillCatalog, subagentCatalog, now, a.cfg.Limits.RecentMemoryChars)
+	fullSystemPrompt := prompt.BuildCycleContext(basePrompt, memories, skillCatalog, subagentCatalog, collaboratorGuide, now, a.cfg.Limits.RecentMemoryChars)
 	systemMsg := llm.Message{
 		Role:    llm.RoleSystem,
 		Content: fullSystemPrompt,
@@ -801,8 +815,9 @@ func (a *Agent) rebuildContext(summary string) ([]llm.Message, map[string]string
 	memories := a.gatherContextMemories()
 	skillCatalog := a.gatherSkillCatalog()
 	subagentCatalog := a.gatherSubagentCatalog()
+	collaboratorGuide := a.gatherCollaboratorGuide()
 	now := time.Now()
-	fullSystemPrompt := prompt.BuildCycleContext(prompts["system"], memories, skillCatalog, subagentCatalog, now, a.cfg.Limits.RecentMemoryChars)
+	fullSystemPrompt := prompt.BuildCycleContext(prompts["system"], memories, skillCatalog, subagentCatalog, collaboratorGuide, now, a.cfg.Limits.RecentMemoryChars)
 
 	messages := []llm.Message{
 		{Role: llm.RoleSystem, Content: fullSystemPrompt},

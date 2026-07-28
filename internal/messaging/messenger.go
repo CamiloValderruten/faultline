@@ -7,11 +7,15 @@ import "strings"
 // Messenger is the tools-side collaborator send port. Adapters that also
 // satisfy agent.Operator (Pending) are wired as both operator and messenger.
 // HasPending lets sleep/subagent_wait wake without draining the queue.
+// ChannelGuide returns runtime-injected collaborator-channel instructions
+// for the system prompt (empty string is never used — adapters always
+// return a non-empty guide).
 type Messenger interface {
 	Send(text string) error
 	SendWithButtons(text string, buttons [][]Button) error
 	SendRich(msg RichMessage) error
 	HasPending() bool
+	ChannelGuide() string
 }
 
 // Button is one interactive button. Data is the opaque callback id returned

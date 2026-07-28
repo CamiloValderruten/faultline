@@ -12,7 +12,7 @@ import (
 
 func TestBuildCycleContext_NoMemories(t *testing.T) {
 	now := time.Date(2026, 4, 27, 10, 30, 0, 0, time.UTC)
-	got := BuildCycleContext("SYSTEM PROMPT", nil, nil, nil, now, 2000)
+	got := BuildCycleContext("SYSTEM PROMPT", nil, nil, nil, "", now, 2000)
 
 	if !strings.Contains(got, "SYSTEM PROMPT") {
 		t.Error("output missing system prompt")
@@ -37,7 +37,7 @@ func TestBuildCycleContext_WithMemories(t *testing.T) {
 		{Path: "alpha.md", Content: "alpha content"},
 		{Path: "beta.md", Content: "beta content"},
 	}
-	got := BuildCycleContext("SYS", mems, nil, nil, now, 2000)
+	got := BuildCycleContext("SYS", mems, nil, nil, "", now, 2000)
 
 	if !strings.Contains(got, "Recent Memories") {
 		t.Error("missing Recent Memories header")
@@ -56,7 +56,7 @@ func TestBuildCycleContext_WithMemories(t *testing.T) {
 func TestBuildCycleContext_TruncatesLongMemory(t *testing.T) {
 	long := strings.Repeat("x", 3000)
 	mems := []bm25.Result{{Path: "long.md", Content: long}}
-	got := BuildCycleContext("SYS", mems, nil, nil, time.Now(), 2000)
+	got := BuildCycleContext("SYS", mems, nil, nil, "", time.Now(), 2000)
 
 	if !strings.Contains(got, "[truncated") {
 		t.Error("expected truncation marker for long memory")
@@ -78,7 +78,7 @@ func TestBuildCycleContext_TruncatesLongMemory(t *testing.T) {
 func TestBuildCycleContext_NoLimitKeepsFullContent(t *testing.T) {
 	long := strings.Repeat("x", 3000)
 	mems := []bm25.Result{{Path: "long.md", Content: long}}
-	got := BuildCycleContext("SYS", mems, nil, nil, time.Now(), 0)
+	got := BuildCycleContext("SYS", mems, nil, nil, "", time.Now(), 0)
 
 	if strings.Contains(got, "[truncated") {
 		t.Error("did not expect truncation marker when limit is disabled")
@@ -93,7 +93,7 @@ func TestBuildCycleContext_WithSkills(t *testing.T) {
 		{Name: "pdf-processing", Description: "Handle PDFs."},
 		{Name: "data-analysis", Description: "Analyze datasets."},
 	}
-	got := BuildCycleContext("SYS", nil, cat, nil, time.Now(), 2000)
+	got := BuildCycleContext("SYS", nil, cat, nil, "", time.Now(), 2000)
 
 	if !strings.Contains(got, "## Available Skills") {
 		t.Error("missing Available Skills header")
@@ -112,7 +112,7 @@ func TestBuildCycleContext_WithSkills(t *testing.T) {
 func TestBuildCycleContext_SkillsAndMemoriesTogether(t *testing.T) {
 	cat := []skills.Skill{{Name: "x", Description: "x."}}
 	mems := []bm25.Result{{Path: "m.md", Content: "memory body"}}
-	got := BuildCycleContext("SYS", mems, cat, nil, time.Now(), 2000)
+	got := BuildCycleContext("SYS", mems, cat, nil, "", time.Now(), 2000)
 
 	skillsIdx := strings.Index(got, "## Available Skills")
 	memIdx := strings.Index(got, "## Recent Memories")
@@ -129,7 +129,7 @@ func TestBuildCycleContext_WithSubagents(t *testing.T) {
 		{Name: "fast", Purpose: "Quick lookups."},
 		{Name: "deep", Purpose: "Architecture analysis."},
 	}
-	got := BuildCycleContext("SYS", nil, nil, cat, time.Now(), 2000)
+	got := BuildCycleContext("SYS", nil, nil, cat, "", time.Now(), 2000)
 
 	if !strings.Contains(got, "## Available Subagent Profiles") {
 		t.Error("missing Subagent Profiles header")
@@ -149,7 +149,7 @@ func TestBuildCycleContext_SubagentsAfterSkills(t *testing.T) {
 	skl := []skills.Skill{{Name: "x", Description: "x."}}
 	sub := []subagent.Catalog{{Name: "fast", Purpose: "y"}}
 	mems := []bm25.Result{{Path: "m.md", Content: "memory body"}}
-	got := BuildCycleContext("SYS", mems, skl, sub, time.Now(), 2000)
+	got := BuildCycleContext("SYS", mems, skl, sub, "", time.Now(), 2000)
 
 	skillsIdx := strings.Index(got, "## Available Skills")
 	subIdx := strings.Index(got, "## Available Subagent Profiles")
@@ -159,5 +159,25 @@ func TestBuildCycleContext_SubagentsAfterSkills(t *testing.T) {
 	}
 	if skillsIdx >= subIdx || subIdx >= memIdx {
 		t.Errorf("expected order skills -> subagent -> memories; got %d, %d, %d", skillsIdx, subIdx, memIdx)
+	}
+}
+
+func TestBuildCycleContext_WithCollaboratorGuide(t *testing.T) {
+	guide := "## Collaborator Channel\n\nYou are on Discord.\n"
+	got := BuildCycleContext("SYS", nil, nil, nil, guide, time.Now(), 2000)
+	if !strings.Contains(got, "You are on Discord.") {
+		t.Fatal("missing collaborator guide body")
+	}
+	timeIdx := strings.Index(got, "**Current Time**")
+	guideIdx := strings.Index(got, "## Collaborator Channel")
+	if timeIdx < 0 || guideIdx < 0 || guideIdx < timeIdx {
+		t.Fatalf("expected guide after current time; time=%d guide=%d", timeIdx, guideIdx)
+	}
+}
+
+func TestBuildCycleContext_EmptyCollaboratorGuideOmitted(t *testing.T) {
+	got := BuildCycleContext("SYS", nil, nil, nil, "   ", time.Now(), 2000)
+	if strings.Contains(got, "Collaborator Channel") {
+		t.Fatal("blank guide should not render a section")
 	}
 }

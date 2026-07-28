@@ -193,12 +193,25 @@ func Render(template string, now time.Time) string {
 // Skills" section with a brief instruction telling the agent to call
 // skill_activate when a task matches a skill's description. Each
 // entry costs ~50-100 tokens, matching the spec's tier-1 disclosure.
-func BuildCycleContext(systemPrompt string, memories []bm25.Result, skillCatalog []skills.Skill, subagentCatalog []subagent.Catalog, now time.Time, memoryCharLimit int) string {
+//
+// collaboratorGuide, when non-empty, is rendered as a "## Collaborator
+// Channel" section describing the active messaging surface (Telegram /
+// Discord). Supplied by the operator adapter at runtime — not from
+// prompt files.
+func BuildCycleContext(systemPrompt string, memories []bm25.Result, skillCatalog []skills.Skill, subagentCatalog []subagent.Catalog, collaboratorGuide string, now time.Time, memoryCharLimit int) string {
 	var sb strings.Builder
 
 	sb.WriteString(systemPrompt)
 	sb.WriteString("\n\n---\n\n")
 	fmt.Fprintf(&sb, "**Current Time**: %s\n\n", now.Format(time.RFC1123))
+
+	if guide := strings.TrimSpace(collaboratorGuide); guide != "" {
+		sb.WriteString(guide)
+		if !strings.HasSuffix(guide, "\n") {
+			sb.WriteByte('\n')
+		}
+		sb.WriteByte('\n')
+	}
 
 	if len(skillCatalog) > 0 {
 		writeSkillCatalog(&sb, skillCatalog)
