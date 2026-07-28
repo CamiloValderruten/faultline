@@ -22,12 +22,13 @@ require (
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/clipperhouse/displaywidth v0.11.0 // indirect
 	github.com/clipperhouse/uax29/v2 v2.7.0 // indirect
+	github.com/cloudflare/circl v1.6.3 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
 	github.com/fatih/color v1.19.0 // indirect
 	github.com/goccy/go-json v0.10.6 // indirect
 	github.com/gogs/chardet v0.0.0-20211120154057-b7413eaefb8f // indirect
-	github.com/gorilla/websocket v1.4.2 // indirect
+	github.com/gorilla/websocket v1.5.3 // indirect
 	github.com/inbucket/html2text v1.0.0 // indirect
 	github.com/jhillyerd/enmime/v2 v2.3.0 // indirect
 	github.com/kr/pretty v0.1.0 // indirect
@@ -49,3 +50,7 @@ require (
 	golang.org/x/text v0.36.0 // indirect
 	gopkg.in/check.v1 v1.0.0-20190902080502-41f04d3bba15 // indirect
 )
+
+// Discord enforces DAVE/E2EE on voice (close 4017). Upstream discordgo lacks
+// it; yeongaori's fork adds pure-Go DAVE via circl/MLS.
+replace github.com/bwmarrin/discordgo => github.com/yeongaori/discordgo-fork v0.0.0-20260627070107-c65bda26a53b

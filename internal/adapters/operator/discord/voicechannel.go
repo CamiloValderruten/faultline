@@ -113,10 +113,14 @@ func (b *Bot) onVoiceStateUpdate(_ *discordgo.Session, vs *discordgo.VoiceStateU
 	}
 }
 
+func voiceConnReady(vc *discordgo.VoiceConnection) bool {
+	return vc != nil && vc.Status == discordgo.VoiceConnectionStatusReady
+}
+
 func (b *Bot) inVoiceChannel() bool {
 	b.voiceMu.Lock()
 	defer b.voiceMu.Unlock()
-	return b.vc != nil && b.vc.Ready
+	return voiceConnReady(b.vc)
 }
 
 func (b *Bot) joinVoice(guildID string) {
@@ -125,29 +129,36 @@ func (b *Bot) joinVoice(guildID string) {
 	}
 
 	b.voiceMu.Lock()
-	if b.vc != nil && b.vc.Ready && b.vc.ChannelID == b.voiceChannelID {
+	if voiceConnReady(b.vc) && b.voiceGuildID == guildID {
 		b.voiceMu.Unlock()
 		return
 	}
 	if b.vc != nil {
-		_ = b.vc.Disconnect()
+		old := b.vc
 		b.vc = nil
+		b.voiceMu.Unlock()
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		_ = old.Disconnect(ctx)
+		cancel()
+	} else {
+		b.voiceMu.Unlock()
 	}
-	b.voiceMu.Unlock()
 
-	vc, err := b.session.ChannelVoiceJoin(guildID, b.voiceChannelID, false, false)
+	ctx, cancel := context.WithTimeout(context.Background(), voiceJoinTimeout)
+	defer cancel()
+	vc, err := b.session.ChannelVoiceJoin(ctx, guildID, b.voiceChannelID, false, false)
 	if err != nil {
 		b.logger.Error("discord voice join failed", "error", err, "channel_id", b.voiceChannelID)
 		return
 	}
-
-	deadline := time.Now().Add(voiceJoinTimeout)
-	for !vc.Ready && time.Now().Before(deadline) {
-		time.Sleep(50 * time.Millisecond)
-	}
-	if !vc.Ready {
-		b.logger.Error("discord voice join timed out", "channel_id", b.voiceChannelID)
-		_ = vc.Disconnect()
+	// Discord may require DAVE/E2EE before media is usable.
+	daveCtx, daveCancel := context.WithTimeout(context.Background(), voiceJoinTimeout)
+	defer daveCancel()
+	if err := vc.WaitForDAVEReady(daveCtx); err != nil {
+		b.logger.Error("discord voice DAVE ready failed", "error", err, "channel_id", b.voiceChannelID)
+		discCtx, discCancel := context.WithTimeout(context.Background(), 10*time.Second)
+		_ = vc.Disconnect(discCtx)
+		discCancel()
 		return
 	}
 
@@ -173,7 +184,9 @@ func (b *Bot) leaveVoice() {
 	if vc == nil {
 		return
 	}
-	if err := vc.Disconnect(); err != nil {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if err := vc.Disconnect(ctx); err != nil {
 		b.logger.Debug("discord voice disconnect", "error", err)
 	}
 	b.logger.Info("discord voice channel left", "channel_id", b.voiceChannelID)
@@ -222,11 +235,13 @@ func (b *Bot) voiceListen(vc *discordgo.VoiceConnection) {
 		current := b.vc
 		busy := b.voicePlaying
 		b.voiceMu.Unlock()
-		if current != vc {
+		if current != vc || !voiceConnReady(vc) {
 			return
 		}
 
 		select {
+		case <-vc.Dead:
+			return
 		case p, ok := <-vc.OpusRecv:
 			if !ok {
 				return
@@ -350,7 +365,7 @@ func muxOpusPacketsToOgg(packets [][]byte) ([]byte, error) {
 }
 
 func (b *Bot) playOggOpus(vc *discordgo.VoiceConnection, ogg []byte) error {
-	if vc == nil || !vc.Ready || vc.OpusSend == nil {
+	if !voiceConnReady(vc) || vc.OpusSend == nil {
 		return fmt.Errorf("voice connection not ready")
 	}
 	reader, _, err := oggreader.NewWith(bytes.NewReader(ogg))
@@ -419,7 +434,7 @@ func (b *Bot) SendVoice(text string) error {
 
 	b.voiceMu.Lock()
 	vc := b.vc
-	ready := vc != nil && vc.Ready
+	ready := voiceConnReady(vc)
 	b.voiceMu.Unlock()
 
 	if ready {
