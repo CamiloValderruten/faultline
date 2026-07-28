@@ -136,3 +136,57 @@ func toDiscordSelect(sel messaging.SelectMenu, idx int) (discordgo.SelectMenu, e
 		Options:     opts,
 	}, nil
 }
+
+// disableMessageComponents returns a copy of message components with every
+// interactive control Disabled. Used as the interaction ack so the collaborator
+// sees the click land and cannot double-press.
+func disableMessageComponents(comps []discordgo.MessageComponent) []discordgo.MessageComponent {
+	if len(comps) == 0 {
+		return nil
+	}
+	out := make([]discordgo.MessageComponent, 0, len(comps))
+	for _, c := range comps {
+		switch row := c.(type) {
+		case discordgo.ActionsRow:
+			out = append(out, disableActionsRow(row))
+		case *discordgo.ActionsRow:
+			if row != nil {
+				out = append(out, disableActionsRow(*row))
+			}
+		default:
+			out = append(out, c)
+		}
+	}
+	return out
+}
+
+func disableActionsRow(row discordgo.ActionsRow) discordgo.ActionsRow {
+	children := make([]discordgo.MessageComponent, 0, len(row.Components))
+	for _, child := range row.Components {
+		switch c := child.(type) {
+		case discordgo.Button:
+			c.Disabled = true
+			children = append(children, c)
+		case *discordgo.Button:
+			if c == nil {
+				continue
+			}
+			btn := *c
+			btn.Disabled = true
+			children = append(children, btn)
+		case discordgo.SelectMenu:
+			c.Disabled = true
+			children = append(children, c)
+		case *discordgo.SelectMenu:
+			if c == nil {
+				continue
+			}
+			menu := *c
+			menu.Disabled = true
+			children = append(children, menu)
+		default:
+			children = append(children, child)
+		}
+	}
+	return discordgo.ActionsRow{Components: children}
+}

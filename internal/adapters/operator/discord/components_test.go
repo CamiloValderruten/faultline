@@ -94,3 +94,38 @@ func TestFormatPhotoNotice(t *testing.T) {
 		t.Fatalf("got=%q", got)
 	}
 }
+
+func TestDisableMessageComponents(t *testing.T) {
+	in := []discordgo.MessageComponent{
+		discordgo.ActionsRow{Components: []discordgo.MessageComponent{
+			discordgo.Button{Label: "Approve", CustomID: "approve", Style: discordgo.SuccessButton},
+			discordgo.Button{Label: "Deny", CustomID: "deny", Style: discordgo.DangerButton},
+		}},
+		discordgo.ActionsRow{Components: []discordgo.MessageComponent{
+			discordgo.SelectMenu{CustomID: "pick", Options: []discordgo.SelectMenuOption{{Label: "A", Value: "a"}}},
+		}},
+	}
+	out := disableMessageComponents(in)
+	if len(out) != 2 {
+		t.Fatalf("rows=%d", len(out))
+	}
+	row0 := out[0].(discordgo.ActionsRow)
+	btn0 := row0.Components[0].(discordgo.Button)
+	btn1 := row0.Components[1].(discordgo.Button)
+	if !btn0.Disabled || !btn1.Disabled {
+		t.Fatalf("buttons not disabled: %+v %+v", btn0, btn1)
+	}
+	if btn0.CustomID != "approve" || btn0.Label != "Approve" {
+		t.Fatalf("button mutated unexpectedly: %+v", btn0)
+	}
+	row1 := out[1].(discordgo.ActionsRow)
+	menu := row1.Components[0].(discordgo.SelectMenu)
+	if !menu.Disabled || menu.CustomID != "pick" {
+		t.Fatalf("select not disabled: %+v", menu)
+	}
+	// Original unchanged.
+	orig := in[0].(discordgo.ActionsRow).Components[0].(discordgo.Button)
+	if orig.Disabled {
+		t.Fatal("original button was mutated")
+	}
+}

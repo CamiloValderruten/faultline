@@ -120,9 +120,26 @@ func (b *Bot) onInteractionCreate(s *discordgo.Session, i *discordgo.Interaction
 	b.logger.Info("received component interaction from collaborator", "text", pending)
 	b.enqueue(pending)
 
-	_ = s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+	// Acknowledge by disabling all interactive components on the message so
+	// the collaborator sees the click landed and can't double-press.
+	resp := &discordgo.InteractionResponse{
 		Type: discordgo.InteractionResponseDeferredMessageUpdate,
-	})
+	}
+	if i.Message != nil {
+		if disabled := disableMessageComponents(i.Message.Components); len(disabled) > 0 {
+			resp = &discordgo.InteractionResponse{
+				Type: discordgo.InteractionResponseUpdateMessage,
+				Data: &discordgo.InteractionResponseData{
+					Content:    i.Message.Content,
+					Components: disabled,
+					Embeds:     i.Message.Embeds,
+				},
+			}
+		}
+	}
+	if err := s.InteractionRespond(i.Interaction, resp); err != nil {
+		b.logger.Debug("interaction respond failed", "error", err)
+	}
 }
 
 func formatComponentPending(data discordgo.MessageComponentInteractionData) string {
