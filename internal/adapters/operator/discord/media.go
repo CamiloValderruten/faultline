@@ -43,6 +43,10 @@ func (b *Bot) inboundAttachments(atts []*discordgo.MessageAttachment, caption st
 			continue
 		}
 		if !isImageAttachment(att) {
+			if isAudioAttachment(att) {
+				// Handled by pickVoiceAttachment / inboundVoice before this path.
+				continue
+			}
 			name := strings.TrimSpace(att.Filename)
 			if name == "" {
 				name = "file"

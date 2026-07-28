@@ -107,6 +107,17 @@ token      = ""
 channel_id = ""
 
 # ---------------------------------------------------------------------------
+# [deepgram] — optional speech (STT/TTS) for Discord voice notes.
+#
+# When api_key is set and Discord is the collaborator channel, inbound voice
+# notes are transcribed and send_voice_message becomes available.
+# ---------------------------------------------------------------------------
+[deepgram]
+api_key   = ""
+stt_model = "nova-3"
+tts_model = "aura-2-thalia-en"
+
+# ---------------------------------------------------------------------------
 # [log] — logging.
 # ---------------------------------------------------------------------------
 [log]

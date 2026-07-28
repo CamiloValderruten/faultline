@@ -16,6 +16,7 @@ type Config struct {
 	Agent    AgentConfig    `toml:"agent"`
 	Telegram TelegramConfig `toml:"telegram"`
 	Discord  DiscordConfig  `toml:"discord"`
+	Deepgram DeepgramConfig `toml:"deepgram"`
 	Log      LogConfig      `toml:"log"`
 	Sandbox  SandboxConfig  `toml:"sandbox"`
 	Email    EmailConfig    `toml:"email"`
@@ -137,6 +138,14 @@ type DiscordConfig struct {
 	ChannelID string `toml:"channel_id"`
 }
 
+// DeepgramConfig holds optional Deepgram STT/TTS settings used for
+// collaborator voice notes (Discord). Requires api_key.
+type DeepgramConfig struct {
+	APIKey   string `toml:"api_key"`
+	STTModel string `toml:"stt_model"`
+	TTSModel string `toml:"tts_model"`
+}
+
 // LogConfig holds logging settings.
 type LogConfig struct {
 	Level string `toml:"level"`
@@ -182,6 +191,11 @@ func (t TelegramConfig) Enabled() bool {
 // Enabled returns true if Discord is configured.
 func (d DiscordConfig) Enabled() bool {
 	return strings.TrimSpace(d.Token) != "" && strings.TrimSpace(d.ChannelID) != ""
+}
+
+// Enabled returns true if Deepgram speech is configured.
+func (d DeepgramConfig) Enabled() bool {
+	return strings.TrimSpace(d.APIKey) != ""
 }
 
 // UpdateConfig holds settings for the automatic self-update goroutine.
@@ -695,6 +709,13 @@ func Load(path string) (*Config, error) {
 	}
 	if cfg.Admin.SessionTTL.Duration() <= 0 {
 		cfg.Admin.SessionTTL = duration(12 * time.Hour)
+	}
+
+	if cfg.Deepgram.STTModel == "" {
+		cfg.Deepgram.STTModel = "nova-3"
+	}
+	if cfg.Deepgram.TTSModel == "" {
+		cfg.Deepgram.TTSModel = "aura-2-thalia-en"
 	}
 
 	if cfg.Telegram.Enabled() && cfg.Discord.Enabled() {

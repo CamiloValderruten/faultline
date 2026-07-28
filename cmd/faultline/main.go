@@ -28,6 +28,7 @@ import (
 	"github.com/CamiloValderruten/faultline/internal/adapters/operator/telegram"
 	"github.com/CamiloValderruten/faultline/internal/adapters/sandbox/docker"
 	skillsfs "github.com/CamiloValderruten/faultline/internal/adapters/skills/fs"
+	"github.com/CamiloValderruten/faultline/internal/adapters/speech/deepgram"
 	"github.com/CamiloValderruten/faultline/internal/adapters/state/jsonfile"
 	"github.com/CamiloValderruten/faultline/internal/agent"
 	"github.com/CamiloValderruten/faultline/internal/config"
@@ -197,6 +198,22 @@ func main() {
 	// the operator/messenger ports stay nil.
 	var operator agent.Operator
 	var messenger messaging.Messenger
+	var voiceOut interface {
+		SendVoice(text string) error
+	}
+	var dgSpeech *deepgram.Client
+	if cfg.Deepgram.Enabled() {
+		var err error
+		dgSpeech, err = deepgram.New(cfg.Deepgram.APIKey, cfg.Deepgram.STTModel, cfg.Deepgram.TTSModel)
+		if err != nil {
+			logger.Error("failed to init deepgram", "error", err)
+			os.Exit(1)
+		}
+		logger.Info("deepgram speech enabled",
+			"stt_model", cfg.Deepgram.STTModel,
+			"tts_model", cfg.Deepgram.TTSModel,
+		)
+	}
 	switch {
 	case cfg.Telegram.Enabled():
 		tg, err := telegram.New(cfg.Telegram.Token, cfg.Telegram.ChatID, logger)
@@ -242,6 +259,11 @@ func main() {
 				})
 				logger.Info("discord inbound images enabled", "dir", mediaDir, "container_prefix", "/input/discord")
 			}
+		}
+		if dgSpeech != nil {
+			dc.SetSpeech(dgSpeech)
+			voiceOut = dc
+			logger.Info("discord voice notes enabled (deepgram stt/tts)")
 		}
 		go dc.Start(ctx)
 		logger.Info("discord bot enabled", "channel_id", cfg.Discord.ChannelID)
@@ -421,6 +443,7 @@ func main() {
 		Index:                index,
 		VectorIndex:          vIndex,
 		Messenger:            messenger,
+		Voice:                voiceOut,
 		Sandbox:              sb,
 		Email:                email,
 		Kobold:               kb,

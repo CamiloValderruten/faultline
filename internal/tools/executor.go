@@ -803,6 +803,27 @@ func (te *Executor) ToolDefs() []llm.Tool {
 				},
 			},
 		)
+		if te.voice != nil {
+			tools = append(tools, llm.Tool{
+				Type: llm.ToolTypeFunction,
+				Function: &llm.FunctionDef{
+					Name: "send_voice_message",
+					Description: "Send a short spoken reply as a Discord audio message (Deepgram TTS). " +
+						"Prefer this when the collaborator sent a voice note. Keep text brief and conversational — " +
+						"no markdown, no long lists. For longer detail use send_message or send_rich_message.",
+					Parameters: map[string]interface{}{
+						"type": "object",
+						"properties": map[string]interface{}{
+							"text": map[string]interface{}{
+								"type":        "string",
+								"description": "Spoken reply text (keep short; roughly a few sentences).",
+							},
+						},
+						"required": []string{"text"},
+					},
+				},
+			})
+		}
 	}
 
 	if te.email != nil {
@@ -1214,6 +1235,7 @@ type Executor struct {
 	memory              *fs.Store
 	index               *bm25.Index
 	messenger           messaging.Messenger // collaborator channel (Telegram or Discord); nil when disabled
+	voice               voiceSender         // optional; Discord+Deepgram SendVoice
 	sandbox             *docker.Sandbox
 	email               *config.EmailConfig
 	kobold              *kobold.Client  // optional; nil means no perf info in context_status
@@ -1277,6 +1299,7 @@ type Deps struct {
 	Index                *bm25.Index
 	VectorIndex          *vector.Index
 	Messenger            messaging.Messenger
+	Voice                voiceSender
 	Sandbox              *docker.Sandbox
 	Email                *config.EmailConfig
 	Kobold               *kobold.Client
@@ -1354,6 +1377,7 @@ func New(deps Deps) *Executor {
 		memory:              deps.Memory,
 		index:               deps.Index,
 		messenger:           deps.Messenger,
+		voice:               deps.Voice,
 		sandbox:             deps.Sandbox,
 		email:               deps.Email,
 		kobold:              deps.Kobold,
@@ -1542,6 +1566,8 @@ func (te *Executor) dispatch(ctx context.Context, call llm.ToolCall) string {
 		return te.sendMessage(args)
 	case "send_rich_message":
 		return te.sendRichMessage(args)
+	case "send_voice_message":
+		return te.sendVoiceMessage(args)
 	case "email_fetch":
 		return te.emailFetch(args)
 	case "mcp_list_servers":

@@ -20,6 +20,7 @@ type Bot struct {
 	logger    *slog.Logger
 
 	media InboundMedia
+	speech Speech
 
 	mu      sync.Mutex
 	pending []string
@@ -166,6 +167,11 @@ func (b *Bot) inboundText(msg *discordgo.Message) (string, bool) {
 		return "", false
 	}
 	text := strings.TrimSpace(msg.Content)
+
+	if voiceAtt := pickVoiceAttachment(msg); voiceAtt != nil {
+		return b.inboundVoice(voiceAtt)
+	}
+
 	if len(msg.Attachments) > 0 {
 		return b.inboundAttachments(msg.Attachments, text)
 	}

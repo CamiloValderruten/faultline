@@ -10,6 +10,12 @@ import (
 	"github.com/CamiloValderruten/faultline/internal/messaging"
 )
 
+// voiceSender is optionally implemented by the Discord messenger when Deepgram
+// TTS is configured.
+type voiceSender interface {
+	SendVoice(text string) error
+}
+
 func (te *Executor) sendMessage(argsJSON string) string {
 	var args struct {
 		Text    string                 `json:"text"`
@@ -78,6 +84,26 @@ func (te *Executor) sendRichMessage(argsJSON string) string {
 	}
 	te.logger.Info("rich message sent to collaborator", "length", len(args.Content))
 	return "Rich message sent to collaborator."
+}
+
+func (te *Executor) sendVoiceMessage(argsJSON string) string {
+	var args struct {
+		Text string `json:"text"`
+	}
+	if err := json.Unmarshal([]byte(argsJSON), &args); err != nil {
+		return fmt.Sprintf("Error parsing arguments: %s", err)
+	}
+	if strings.TrimSpace(args.Text) == "" {
+		return "Error: text is required"
+	}
+	if te.voice == nil {
+		return "Error: voice replies are not configured. Enable [deepgram] with Discord."
+	}
+	if err := te.voice.SendVoice(args.Text); err != nil {
+		return fmt.Sprintf("Error sending voice message: %s", err)
+	}
+	te.logger.Info("voice message sent to collaborator", "length", len(args.Text))
+	return "Voice message sent to collaborator."
 }
 
 // sleep suspends the agent for the requested number of seconds, returning
