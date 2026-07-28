@@ -99,16 +99,17 @@ func (b *Bot) onVoiceStateUpdate(_ *discordgo.Session, vs *discordgo.VoiceStateU
 	}
 
 	if vs.ChannelID == b.voiceChannelID {
+		// Operator is in our VC. Join once; ignore mute/deaf/self-stream churn.
 		b.joinVoice(vs.GuildID)
 		return
 	}
 
-	// Left or moved away from our VC.
+	// Operator left / moved away from our VC — only then disconnect.
 	before := ""
 	if vs.BeforeUpdate != nil {
 		before = vs.BeforeUpdate.ChannelID
 	}
-	if before == b.voiceChannelID || b.inVoiceChannel() {
+	if before == b.voiceChannelID {
 		b.leaveVoice()
 	}
 }
@@ -133,15 +134,26 @@ func (b *Bot) joinVoice(guildID string) {
 		b.voiceMu.Unlock()
 		return
 	}
-	if b.vc != nil {
-		old := b.vc
-		b.vc = nil
+	if b.voiceJoining {
 		b.voiceMu.Unlock()
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		return
+	}
+	b.voiceJoining = true
+	old := b.vc
+	b.vc = nil
+	b.voiceMu.Unlock()
+
+	defer func() {
+		b.voiceMu.Lock()
+		b.voiceJoining = false
+		b.voiceMu.Unlock()
+	}()
+
+	if old != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		_ = old.Disconnect(ctx)
 		cancel()
-	} else {
-		b.voiceMu.Unlock()
+		old.Kill()
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), voiceJoinTimeout)
@@ -149,6 +161,9 @@ func (b *Bot) joinVoice(guildID string) {
 	vc, err := b.session.ChannelVoiceJoin(ctx, guildID, b.voiceChannelID, false, false)
 	if err != nil {
 		b.logger.Error("discord voice join failed", "error", err, "channel_id", b.voiceChannelID)
+		if vc != nil {
+			vc.Kill()
+		}
 		return
 	}
 	// Discord may require DAVE/E2EE before media is usable.
@@ -156,9 +171,10 @@ func (b *Bot) joinVoice(guildID string) {
 	defer daveCancel()
 	if err := vc.WaitForDAVEReady(daveCtx); err != nil {
 		b.logger.Error("discord voice DAVE ready failed", "error", err, "channel_id", b.voiceChannelID)
-		discCtx, discCancel := context.WithTimeout(context.Background(), 10*time.Second)
+		discCtx, discCancel := context.WithTimeout(context.Background(), 5*time.Second)
 		_ = vc.Disconnect(discCtx)
 		discCancel()
+		vc.Kill()
 		return
 	}
 
@@ -177,6 +193,11 @@ func (b *Bot) joinVoice(guildID string) {
 
 func (b *Bot) leaveVoice() {
 	b.voiceMu.Lock()
+	if b.voiceJoining {
+		// A join is in flight; don't yank the connection mid-handshake.
+		b.voiceMu.Unlock()
+		return
+	}
 	vc := b.vc
 	b.vc = nil
 	b.voiceGuildID = ""
@@ -189,6 +210,7 @@ func (b *Bot) leaveVoice() {
 	if err := vc.Disconnect(ctx); err != nil {
 		b.logger.Debug("discord voice disconnect", "error", err)
 	}
+	vc.Kill()
 	b.logger.Info("discord voice channel left", "channel_id", b.voiceChannelID)
 }
 

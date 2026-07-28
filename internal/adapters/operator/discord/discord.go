@@ -32,6 +32,7 @@ type Bot struct {
 	voiceGuildID      string
 	vc                *discordgo.VoiceConnection
 	voicePlaying      bool
+	voiceJoining      bool
 	voiceHandlerAdded bool
 }
 
