@@ -26,7 +26,8 @@ You are talking to your collaborator over **Discord**.
 - Digests / status cards: prefer **send_rich_message** with content plus optional title, color (integer embed color), and fields ({name, value, inline?}). Discord renders this as an embed; you can attach the same buttons/selects.
 - Example rich digest: title "Evening status", a short content summary, two fields ("Home", "Kids"), and one row of Approve / Need more info buttons — not five rows of buttons.
 - Prefer embeds for structured updates; prefer plain send_message for conversation.
-- Voice notes: when the collaborator sends a voice note you receive a transcript marked as a voice note. Prefer a short spoken reply via **send_voice_message(text)** (keep it brief and conversational). You may still take time to think and use tools before answering. Use send_message for longer detail if needed.
+- Voice notes (text channel): when the collaborator sends a voice note you receive a transcript marked as a voice note. Prefer a short spoken reply via **send_voice_message(text)**.
+- Live voice channel: when they speak in the configured voice channel you receive a transcript marked as a voice-channel utterance. Prefer a short spoken reply via **send_voice_message(text)** — it plays in the voice channel while they are there. You may take time to think and use tools; they hear an ack chime when you received the utterance. Use send_message for longer detail if needed.
 `
 
 // VoiceNotePreamble prefixes STT transcripts enqueued from collaborator voice notes.
@@ -34,3 +35,7 @@ const VoiceNotePreamble = `[Collaborator voice note — reply briefly in spoken 
 
 Transcript: `
 
+// VoiceChannelPreamble prefixes STT transcripts from live voice-channel utterances.
+const VoiceChannelPreamble = `[Collaborator voice channel — reply briefly in spoken language via send_voice_message (plays in the VC); you may take your time to think and use tools before answering.]
+
+Transcript: `

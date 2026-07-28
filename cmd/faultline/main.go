@@ -265,6 +265,17 @@ func main() {
 			voiceOut = dc
 			logger.Info("discord voice notes enabled (deepgram stt/tts)")
 		}
+		if cfg.Discord.VoiceChannelEnabled() {
+			if dgSpeech == nil {
+				logger.Warn("discord voice_channel_id set but [deepgram] is not configured; live voice disabled")
+			} else {
+				dc.SetVoiceChannel(cfg.Discord.VoiceChannelID, cfg.Discord.OperatorUserID)
+				logger.Info("discord live voice channel enabled",
+					"voice_channel_id", cfg.Discord.VoiceChannelID,
+					"operator_user_id", cfg.Discord.OperatorUserID,
+				)
+			}
+		}
 		go dc.Start(ctx)
 		logger.Info("discord bot enabled", "channel_id", cfg.Discord.ChannelID)
 		// Startup ping after a short delay so the gateway can connect.

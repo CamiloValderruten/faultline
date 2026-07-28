@@ -1,7 +1,6 @@
 package discord
 
 import (
-	"bytes"
 	"context"
 	"fmt"
 	"io"
@@ -118,45 +117,6 @@ func (b *Bot) downloadAttachmentBytes(att *discordgo.MessageAttachment) ([]byte,
 		ct = att.ContentType
 	}
 	return data, ct, nil
-}
-
-// SendVoice synthesizes speech and uploads it as an audio attachment.
-func (b *Bot) SendVoice(text string) error {
-	text = strings.TrimSpace(text)
-	if text == "" {
-		return fmt.Errorf("text is required")
-	}
-	if b.speech == nil {
-		return fmt.Errorf("voice replies require [deepgram] to be configured")
-	}
-
-	spoken := stripForSpeech(text)
-	if spoken == "" {
-		spoken = text
-	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
-	defer cancel()
-	audio, contentType, err := b.speech.Speak(ctx, spoken)
-	if err != nil {
-		return fmt.Errorf("tts: %w", err)
-	}
-	name := "reply.mp3"
-	if !strings.Contains(contentType, "mpeg") && !strings.Contains(contentType, "mp3") {
-		name = "reply.audio"
-	}
-
-	_, err = b.session.ChannelMessageSendComplex(b.channelID, &discordgo.MessageSend{
-		Files: []*discordgo.File{{
-			Name:        name,
-			ContentType: contentType,
-			Reader:      bytes.NewReader(audio),
-		}},
-	})
-	if err != nil {
-		return fmt.Errorf("send discord voice: %w", err)
-	}
-	return nil
 }
 
 func stripForSpeech(s string) string {

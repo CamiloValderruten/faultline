@@ -19,11 +19,20 @@ type Bot struct {
 	channelID string
 	logger    *slog.Logger
 
-	media InboundMedia
+	media  InboundMedia
 	speech Speech
 
 	mu      sync.Mutex
 	pending []string
+
+	// Live voice channel (optional).
+	voiceMu           sync.Mutex
+	voiceChannelID    string
+	operatorUserID    string
+	voiceGuildID      string
+	vc                *discordgo.VoiceConnection
+	voicePlaying      bool
+	voiceHandlerAdded bool
 }
 
 // New creates a Discord session (not yet connected). Call Start to open
@@ -70,6 +79,7 @@ func (b *Bot) Start(ctx context.Context) {
 	b.logger.Info("discord listener started", "user", user, "channel_id", b.channelID)
 
 	<-ctx.Done()
+	b.leaveVoice()
 	if err := b.session.Close(); err != nil {
 		b.logger.Debug("discord session close", "error", err)
 	}
