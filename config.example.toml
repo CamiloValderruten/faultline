@@ -105,12 +105,17 @@ chat_id = 0
 [discord]
 token      = ""
 channel_id = ""
+# Optional live voice channel (requires [deepgram]). Bot joins when the
+# operator enters this VC and leaves when they leave. Bot needs Connect +
+# Speak permissions; enable Server Members / Voice State intents as needed.
+# voice_channel_id = ""  # snowflake string
+# operator_user_id = ""  # your Discord user snowflake
 
 # ---------------------------------------------------------------------------
-# [deepgram] — optional speech (STT/TTS) for Discord voice notes.
+# [deepgram] — optional speech (STT/TTS) for Discord voice notes and live VC.
 #
 # When api_key is set and Discord is the collaborator channel, inbound voice
-# notes are transcribed and send_voice_message becomes available.
+# notes / VC utterances are transcribed and send_voice_message becomes available.
 # ---------------------------------------------------------------------------
 [deepgram]
 api_key   = ""

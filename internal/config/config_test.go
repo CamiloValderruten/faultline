@@ -320,6 +320,21 @@ func TestDiscordConfig_Enabled(t *testing.T) {
 	}
 }
 
+func TestDiscordConfig_VoiceChannelEnabled(t *testing.T) {
+	base := DiscordConfig{Token: "x", ChannelID: "1"}
+	if base.VoiceChannelEnabled() {
+		t.Error("missing voice fields should not enable voice channel")
+	}
+	base.VoiceChannelID = "2"
+	if base.VoiceChannelEnabled() {
+		t.Error("missing operator_user_id should not enable voice channel")
+	}
+	base.OperatorUserID = "3"
+	if !base.VoiceChannelEnabled() {
+		t.Error("full voice config should enable voice channel")
+	}
+}
+
 func TestLoad_RejectsBothTelegramAndDiscord(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "config.toml")
 	content := `

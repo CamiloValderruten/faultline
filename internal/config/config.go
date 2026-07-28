@@ -136,6 +136,12 @@ type TelegramConfig struct {
 type DiscordConfig struct {
 	Token     string `toml:"token"`
 	ChannelID string `toml:"channel_id"`
+	// VoiceChannelID is the Discord voice channel the bot follows the
+	// operator into (silence-gated talk). Empty disables live voice.
+	VoiceChannelID string `toml:"voice_channel_id"`
+	// OperatorUserID is the Discord snowflake of the human collaborator.
+	// Only this user's speech is treated as a turn.
+	OperatorUserID string `toml:"operator_user_id"`
 }
 
 // DeepgramConfig holds optional Deepgram STT/TTS settings used for
@@ -191,6 +197,13 @@ func (t TelegramConfig) Enabled() bool {
 // Enabled returns true if Discord is configured.
 func (d DiscordConfig) Enabled() bool {
 	return strings.TrimSpace(d.Token) != "" && strings.TrimSpace(d.ChannelID) != ""
+}
+
+// VoiceChannelEnabled reports whether live voice-channel talk is configured.
+func (d DiscordConfig) VoiceChannelEnabled() bool {
+	return d.Enabled() &&
+		strings.TrimSpace(d.VoiceChannelID) != "" &&
+		strings.TrimSpace(d.OperatorUserID) != ""
 }
 
 // Enabled returns true if Deepgram speech is configured.
