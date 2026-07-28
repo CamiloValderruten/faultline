@@ -78,6 +78,31 @@ func TestSpeak_OK(t *testing.T) {
 	}
 }
 
+func TestSpeakOggOpus_OK(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Query().Get("encoding") != "opus" || r.URL.Query().Get("container") != "ogg" {
+			t.Fatalf("q=%v", r.URL.Query())
+		}
+		_, _ = w.Write([]byte("OGGOPUS"))
+	}))
+	defer srv.Close()
+
+	c, err := New("test-key", "", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	c.baseURL = srv.URL
+	c.http = srv.Client()
+
+	audio, err := c.SpeakOggOpus(context.Background(), "hi")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(audio) != "OGGOPUS" {
+		t.Fatalf("audio=%q", audio)
+	}
+}
+
 func TestNew_RequiresKey(t *testing.T) {
 	if _, err := New("", "", ""); err == nil {
 		t.Fatal("expected error")

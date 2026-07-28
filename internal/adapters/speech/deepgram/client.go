@@ -111,9 +111,22 @@ func (c *Client) Transcribe(ctx context.Context, audio []byte, contentType strin
 
 // Speak converts text to MP3 audio via /v1/speak.
 func (c *Client) Speak(ctx context.Context, text string) ([]byte, string, error) {
+	body, err := c.speakEncoding(ctx, text, "mp3", "")
+	if err != nil {
+		return nil, "", err
+	}
+	return body, "audio/mpeg", nil
+}
+
+// SpeakOggOpus converts text to an Ogg/Opus container suitable for Discord voice playback.
+func (c *Client) SpeakOggOpus(ctx context.Context, text string) ([]byte, error) {
+	return c.speakEncoding(ctx, text, "opus", "ogg")
+}
+
+func (c *Client) speakEncoding(ctx context.Context, text, encoding, container string) ([]byte, error) {
 	text = strings.TrimSpace(text)
 	if text == "" {
-		return nil, "", fmt.Errorf("text is required")
+		return nil, fmt.Errorf("text is required")
 	}
 	if len([]rune(text)) > maxTTSChars {
 		runes := []rune(text)
@@ -122,40 +135,43 @@ func (c *Client) Speak(ctx context.Context, text string) ([]byte, string, error)
 
 	u, err := url.Parse(strings.TrimRight(c.baseURL, "/") + "/v1/speak")
 	if err != nil {
-		return nil, "", err
+		return nil, err
 	}
 	q := u.Query()
 	q.Set("model", c.ttsModel)
-	q.Set("encoding", "mp3")
+	q.Set("encoding", encoding)
+	if container != "" {
+		q.Set("container", container)
+	}
 	u.RawQuery = q.Encode()
 
 	payload, err := json.Marshal(map[string]string{"text": text})
 	if err != nil {
-		return nil, "", err
+		return nil, err
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, u.String(), bytes.NewReader(payload))
 	if err != nil {
-		return nil, "", err
+		return nil, err
 	}
 	req.Header.Set("Authorization", "Token "+c.apiKey)
 	req.Header.Set("Content-Type", "application/json")
 
 	resp, err := c.http.Do(req)
 	if err != nil {
-		return nil, "", fmt.Errorf("deepgram speak: %w", err)
+		return nil, fmt.Errorf("deepgram speak: %w", err)
 	}
 	defer resp.Body.Close()
 	body, err := io.ReadAll(io.LimitReader(resp.Body, 20<<20))
 	if err != nil {
-		return nil, "", err
+		return nil, err
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return nil, "", fmt.Errorf("deepgram speak HTTP %d: %s", resp.StatusCode, truncate(string(body), 300))
+		return nil, fmt.Errorf("deepgram speak HTTP %d: %s", resp.StatusCode, truncate(string(body), 300))
 	}
 	if len(body) == 0 {
-		return nil, "", fmt.Errorf("deepgram speak: empty audio")
+		return nil, fmt.Errorf("deepgram speak: empty audio")
 	}
-	return body, "audio/mpeg", nil
+	return body, nil
 }
 
 func truncate(s string, n int) string {
