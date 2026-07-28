@@ -225,6 +225,7 @@ func (a *Agent) chatReq(messages []llm.Message, tools []llm.Tool) llm.ChatReques
 		TopK:              a.cfg.Agent.TopK,
 		MinP:              a.cfg.Agent.MinP,
 		RepetitionPenalty: a.cfg.Agent.RepetitionPenalty,
+		Thinking:          a.cfg.Agent.Thinking,
 	}
 }
 

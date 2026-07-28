@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
+	"path/filepath"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -197,6 +198,20 @@ func main() {
 		if err != nil {
 			logger.Error("failed to connect telegram bot", "error", err)
 			os.Exit(1)
+		}
+		// Photos are saved under the sandbox input mount so MCP vision
+		// tools (e.g. minimax understand_image) can read /input/telegram/...
+		if sb != nil {
+			mediaDir := filepath.Join(sb.Dir(), "input", "telegram")
+			if err := os.MkdirAll(mediaDir, 0o755); err != nil {
+				logger.Warn("telegram inbound media dir unavailable", "dir", mediaDir, "error", err)
+			} else {
+				tg.SetInboundMedia(telegram.InboundMedia{
+					HostDir:         mediaDir,
+					ContainerPrefix: "/input/telegram",
+				})
+				logger.Info("telegram inbound photos enabled", "dir", mediaDir, "container_prefix", "/input/telegram")
+			}
 		}
 		go tg.Start(ctx)
 		logger.Info("telegram bot enabled", "chat_id", cfg.Telegram.ChatID)

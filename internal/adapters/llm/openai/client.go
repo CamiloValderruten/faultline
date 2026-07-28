@@ -106,6 +106,14 @@ type chatRequestWire struct {
 	TopK              int     `json:"top_k,omitempty"`
 	MinP              float32 `json:"min_p,omitempty"`
 	RepetitionPenalty float32 `json:"repetition_penalty,omitempty"`
+
+	// MiniMax-M3 thinking control. Omitted when unset.
+	Thinking *thinkingWire `json:"thinking,omitempty"`
+}
+
+// thinkingWire is the MiniMax Chat Completions thinking object.
+type thinkingWire struct {
+	Type string `json:"type"`
 }
 
 // apiError is the OpenAI-style error envelope: {"error": {"message": ...,
@@ -142,6 +150,9 @@ func (l *Client) Chat(ctx context.Context, req llm.ChatRequest) (*llm.ChatRespon
 	if req.Seed != 0 {
 		s := req.Seed
 		wire.Seed = &s
+	}
+	if req.Thinking != "" {
+		wire.Thinking = &thinkingWire{Type: req.Thinking}
 	}
 
 	body, err := json.Marshal(wire)

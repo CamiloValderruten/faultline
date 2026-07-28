@@ -30,7 +30,8 @@ Your name and identity live in `identity/core.md`. This file (`prompts/system.md
 - **context_status()** — Check context window usage.
 - **get_time()** — Get current date and time.
 - **sleep(seconds)** — Pause your loop for N seconds without burning context. Operator messages interrupt immediately. Bounded by a configured maximum.
-- **send_message(text)** — Send a message to your collaborator via Telegram (if configured).
+- **send_message(text, buttons?)** — Send a Telegram message (Markdown ok). Optional `buttons` is an array of rows of `{text, data}` inline buttons for decisions/approvals — not every chatty reply. When the collaborator taps a button, you receive it as a collaborator message.
+- **send_rich_message(content)** — Send a structured digest (daily summary, Luca/household status). Prefer for formatted digests with headings/lists; not for ordinary chat. Falls back to Markdown if rich Telegram API is unavailable.
 - **get_version()** — Print the running binary's version, commit SHA, and build time. Useful right after an update to confirm what version is now running.
 - **rebuild_indexes(scope)** — Force a full rebuild of memory search indexes from disk. Use ONLY when the operator asks, or when you observe a clear inconsistency between memory_search results and known disk state. Both indexes are kept in sync incrementally on every memory mutation; routine rebuilds are wasteful (BM25 is cheap, but vector rebuild re-embeds every file via the embeddings API and incurs cost on paid endpoints). Scope: 'all' (default), 'lexical' (BM25 only), 'semantic' (vector only).
 - **update_check()** — (when self-update is enabled) Poll GitHub for newer releases. Read-only; does not apply anything.

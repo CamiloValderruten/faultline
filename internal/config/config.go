@@ -97,6 +97,11 @@ type AgentConfig struct {
 	MinP              float32 `toml:"min_p"`
 	RepetitionPenalty float32 `toml:"repetition_penalty"`
 
+	// Thinking controls MiniMax-M3 chain-of-thought. Empty = omit from
+	// the request (server default: thinking on). Allowed values:
+	// "disabled", "adaptive", "enabled". Harmless on other backends.
+	Thinking string `toml:"thinking"`
+
 	// MaxSleep is the upper bound enforced by the `sleep` tool. The agent
 	// can request shorter sleeps; longer ones are clamped to this value.
 	// Operator messages and forced shutdown still interrupt mid-sleep
