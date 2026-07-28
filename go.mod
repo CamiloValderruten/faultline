@@ -8,7 +8,7 @@ require (
 	github.com/Mad-Pixels/goldmark-tgmd v0.0.10
 	github.com/bwmarrin/discordgo v0.29.0
 	github.com/go-telegram-bot-api/telegram-bot-api/v5 v5.5.1
-	github.com/pion/rtp v1.8.7
+	github.com/pion/rtp v1.10.1
 	github.com/pion/webrtc/v3 v3.3.5
 	golang.org/x/crypto v0.50.0
 	golang.org/x/mod v0.35.0
@@ -17,6 +17,7 @@ require (
 )
 
 require (
+	github.com/FlameInTheDark/go-dave v1.1.0 // indirect
 	github.com/StirlingMarketingGroup/go-retry v0.0.0-20190512160921-94a8eb23e893 // indirect
 	github.com/cention-sany/utf7 v0.0.0-20170124080048-26cad61bd60a // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
@@ -45,6 +46,7 @@ require (
 	github.com/rs/xid v1.6.0 // indirect
 	github.com/sqs/go-xoauth2 v0.0.0-20120917012134-0911dad68e56 // indirect
 	github.com/ssor/bom v0.0.0-20170718123548-6386211fdfcf // indirect
+	github.com/thomas-vilte/mls-go v1.0.0 // indirect
 	github.com/yuin/goldmark v1.6.0 // indirect
 	golang.org/x/sys v0.43.0 // indirect
 	golang.org/x/text v0.36.0 // indirect

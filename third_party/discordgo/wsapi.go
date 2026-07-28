@@ -744,6 +744,7 @@ func (s *Session) ChannelVoiceJoin(ctx context.Context, gID, cID string, mute, d
 	voice.dead = make(chan struct{})
 	voice.Dead = voice.dead
 	voice.GuildID = gID
+	voice.ChannelID = cID
 	voice.session = s
 	voice.LogLevel = s.LogLevel
 	voice.Cond.L.Unlock()
