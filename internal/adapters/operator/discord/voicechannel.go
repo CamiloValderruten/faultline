@@ -182,39 +182,73 @@ func (b *Bot) joinVoice(guildID string) {
 		old.Kill()
 	}
 
+	// Discord often emits a second VOICE_SERVER_UPDATE during connect; joining
+	// immediately races and yields "use of closed network connection" on UDP.
+	time.Sleep(500 * time.Millisecond)
+	if !b.operatorInConfiguredVoice() {
+		b.logger.Debug("discord voice join aborted; operator left before connect")
+		return
+	}
+
+	const maxAttempts = 4
+	var lastErr error
+	for attempt := 1; attempt <= maxAttempts; attempt++ {
+		vc, err := b.tryJoinVoiceOnce(guildID)
+		if err == nil {
+			b.voiceMu.Lock()
+			b.vc = vc
+			b.voiceGuildID = guildID
+			b.voiceMu.Unlock()
+			b.logger.Info("discord voice channel joined",
+				"channel_id", b.voiceChannelID,
+				"guild_id", guildID,
+				"operator_user_id", b.operatorUserID,
+				"attempt", attempt,
+			)
+			go b.voiceListen(vc)
+			return
+		}
+		lastErr = err
+		b.logger.Warn("discord voice join attempt failed",
+			"attempt", attempt,
+			"error", err,
+			"channel_id", b.voiceChannelID,
+		)
+		if attempt < maxAttempts {
+			time.Sleep(time.Duration(attempt) * 750 * time.Millisecond)
+			if !b.operatorInConfiguredVoice() {
+				b.logger.Debug("discord voice join aborted; operator left during retries")
+				return
+			}
+		}
+	}
+	b.logger.Error("discord voice join failed", "error", lastErr, "channel_id", b.voiceChannelID, "attempts", maxAttempts)
+}
+
+func (b *Bot) tryJoinVoiceOnce(guildID string) (*discordgo.VoiceConnection, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), voiceJoinTimeout)
 	defer cancel()
 	vc, err := b.session.ChannelVoiceJoin(ctx, guildID, b.voiceChannelID, false, false)
 	if err != nil {
-		b.logger.Error("discord voice join failed", "error", err, "channel_id", b.voiceChannelID)
 		if vc != nil {
 			vc.Kill()
 		}
-		return
+		return nil, err
 	}
-	// Discord may require DAVE/E2EE before media is usable.
 	daveCtx, daveCancel := context.WithTimeout(context.Background(), voiceJoinTimeout)
 	defer daveCancel()
 	if err := vc.WaitForDAVEReady(daveCtx); err != nil {
-		b.logger.Error("discord voice DAVE ready failed", "error", err, "channel_id", b.voiceChannelID)
 		discCtx, discCancel := context.WithTimeout(context.Background(), 5*time.Second)
 		_ = vc.Disconnect(discCtx)
 		discCancel()
 		vc.Kill()
-		return
+		return nil, fmt.Errorf("DAVE ready: %w", err)
 	}
-
-	b.voiceMu.Lock()
-	b.vc = vc
-	b.voiceGuildID = guildID
-	b.voiceMu.Unlock()
-
-	b.logger.Info("discord voice channel joined",
-		"channel_id", b.voiceChannelID,
-		"guild_id", guildID,
-		"operator_user_id", b.operatorUserID,
-	)
-	go b.voiceListen(vc)
+	if !voiceConnPlayable(vc) {
+		vc.Kill()
+		return nil, fmt.Errorf("voice connection not playable after join (status=%v)", vc.Status)
+	}
+	return vc, nil
 }
 
 func (b *Bot) leaveVoice() {

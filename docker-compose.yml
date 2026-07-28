@@ -22,8 +22,10 @@ services:
     user: "${PUID:-1000}:${PGID:-1003}"
     command: ["-config", "/config/config.toml"]
     stop_grace_period: 3m
-    ports:
-      - "8710:8710"
+    # Host networking: Discord voice needs stable outbound UDP. Docker bridge
+    # NAT on the Pi races/drops the voice handshake ("use of closed network
+    # connection"). Admin UI still binds cfg.admin.bind (0.0.0.0:8710).
+    network_mode: host
     group_add:
       - "${DOCKER_GID:-986}"
     volumes:
