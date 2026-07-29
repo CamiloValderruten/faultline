@@ -30,13 +30,17 @@ func TestToolDefsAdvertisesOnlyAllowlistedMCPTools(t *testing.T) {
 		},
 	})
 
-	names := toolDefNames(te.ToolDefs())
+	// MCP tools are Tier 2 (behind search); registry membership is via buildAllToolDefs.
+	names := toolDefNames(te.buildAllToolDefs())
 
 	if !names["mcp_github_search_repositories"] {
-		t.Fatal("expected allowlisted MCP tool to be advertised")
+		t.Fatal("expected allowlisted MCP tool in full registry")
 	}
 	if names["mcp_github_delete_repository"] {
-		t.Fatal("expected unallowlisted MCP tool to stay out of ToolDefs")
+		t.Fatal("expected unallowlisted MCP tool to stay out of registry")
+	}
+	if toolDefNames(te.ToolDefs())["mcp_github_search_repositories"] {
+		t.Fatal("expected allowlisted MCP tool to stay Tier 2 until searched")
 	}
 }
 
@@ -59,7 +63,7 @@ func TestSubagentToolDefsIncludesOrdinaryAllowlistedMCPTools(t *testing.T) {
 		},
 	})
 
-	names := toolDefNames(te.ToolDefs())
+	names := toolDefNames(te.buildAllToolDefs())
 
 	if !names["mcp_github_search_repositories"] {
 		t.Fatal("expected ordinary allowlisted MCP tool to be available to wired subagents")
@@ -170,12 +174,16 @@ func TestToolDefsAdvertisesMCPManagementToolsOnlyToPrimary(t *testing.T) {
 		MCPDiscovered: testMCPDiscovered(),
 		MCPOAuth:      testOAuthManager(t),
 	})
-	oauthNames := toolDefNames(oauthWithoutOAuthServers.ToolDefs())
+	// OAuth management tools are Tier 2; they must be in the registry when OAuth is wired.
+	oauthNames := toolDefNames(oauthWithoutOAuthServers.buildAllToolDefs())
 	if !oauthNames["mcp_oauth_start"] {
-		t.Fatal("expected OAuth-enabled primary to advertise mcp_oauth_start even before an OAuth server is configured")
+		t.Fatal("expected OAuth-enabled primary to register mcp_oauth_start even before an OAuth server is configured")
 	}
 	if !oauthNames["mcp_oauth_status"] {
-		t.Fatal("expected OAuth-enabled primary to advertise mcp_oauth_status even before an OAuth server is configured")
+		t.Fatal("expected OAuth-enabled primary to register mcp_oauth_status even before an OAuth server is configured")
+	}
+	if toolDefNames(oauthWithoutOAuthServers.ToolDefs())["mcp_oauth_start"] {
+		t.Fatal("expected mcp_oauth_start to stay Tier 2 until searched")
 	}
 
 	subagent := New(Deps{
@@ -354,9 +362,9 @@ func TestExecuteMCPRestartStdioServerUpdatesDiscovery(t *testing.T) {
 	if caller.server.AllowTools[0] != "new_search" {
 		t.Fatalf("restart used stale config: allow_tools = %#v", caller.server.AllowTools)
 	}
-	names := toolDefNames(te.ToolDefs())
+	names := toolDefNames(te.buildAllToolDefs())
 	if !names["mcp_local_new_search"] {
-		t.Fatal("expected restarted discovery to update ToolDefs")
+		t.Fatal("expected restarted discovery to update tool registry")
 	}
 	if names["mcp_local_old_search"] {
 		t.Fatal("expected old discovered tool to be replaced")
