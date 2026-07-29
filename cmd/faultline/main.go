@@ -432,6 +432,15 @@ func main() {
 	}
 	oauthSrv.Start(ctx)
 
+	peerMailbox, peerSrv, err := buildPeerMailbox(cfg.Peers, logger)
+	if err != nil {
+		logger.Error("peer messaging failed to configure", "error", err)
+		os.Exit(1)
+	}
+	if peerSrv != nil {
+		peerSrv.Start(ctx)
+	}
+
 	// Admin UI is constructed BEFORE the tool executor when enabled,
 	// because the executor takes the admin's tool ring buffer as its
 	// Observer. Inspectors are attached back to the admin server
@@ -469,6 +478,7 @@ func main() {
 		},
 		MCPOAuth:        oauthManager,
 		Scheduler:       scheduler,
+		Peers:           peerMailbox,
 		Logger:          logger,
 		WebCache:        webCache,
 		MaxTokens:       cfg.Agent.MaxTokens,
@@ -568,6 +578,7 @@ func main() {
 		// Best-effort admin shutdown before exit.
 		forceCancel()
 		oauthSrv.Wait()
+		peerSrv.Wait()
 		adminSrv.Wait()
 		adminSrv.Close()
 		os.Exit(1)
@@ -579,6 +590,7 @@ func main() {
 	// returned; nothing else useful runs through the admin UI now.
 	forceCancel()
 	oauthSrv.Wait()
+	peerSrv.Wait()
 	adminSrv.Wait()
 	adminSrv.Close()
 

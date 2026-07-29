@@ -29,6 +29,7 @@ import (
 	"github.com/CamiloValderruten/faultline/internal/config"
 	"github.com/CamiloValderruten/faultline/internal/llm"
 	"github.com/CamiloValderruten/faultline/internal/messaging"
+	"github.com/CamiloValderruten/faultline/internal/peer"
 	"github.com/CamiloValderruten/faultline/internal/schedule"
 	"github.com/CamiloValderruten/faultline/internal/search/bm25"
 	"github.com/CamiloValderruten/faultline/internal/search/vector"
@@ -127,6 +128,9 @@ var subagentForbidden = map[string]struct{}{
 	"schedule_task":             {},
 	"list_scheduled_tasks":      {},
 	"cancel_scheduled_task":     {},
+	"peer_send":                 {},
+	"peer_inbox":                {},
+	"peer_read":                 {},
 	"subagent_run":              {},
 	"subagent_spawn":            {},
 	"subagent_wait":             {},
@@ -1279,6 +1283,10 @@ func (te *Executor) ToolDefs() []llm.Tool {
 		tools = append(tools, defs...)
 	}
 
+	if defs := te.peerToolDefs(); len(defs) > 0 {
+		tools = append(tools, defs...)
+	}
+
 	// Mode-based filtering: drop tools subagents are not allowed to
 	// call. Applied at the end so the rest of ToolDefs() doesn't have
 	// to be branchy on mode.
@@ -1339,6 +1347,7 @@ type Executor struct {
 	mcpReload           func(context.Context) (mcp.Caller, []mcp.DiscoveredServer, error)
 	mcpOAuth            *mcp.OAuthManager
 	scheduler           *schedule.Store
+	peers               *peer.Mailbox
 	retiredMCPCallers   []mcp.Caller
 	logger              *slog.Logger
 	http                *http.Client
@@ -1402,6 +1411,7 @@ type Deps struct {
 	MCPReload            func(context.Context) (mcp.Caller, []mcp.DiscoveredServer, error)
 	MCPOAuth             *mcp.OAuthManager
 	Scheduler            *schedule.Store
+	Peers                *peer.Mailbox
 	Logger               *slog.Logger
 	WebCache             *WebCache
 	MaxTokens            int
@@ -1483,6 +1493,7 @@ func New(deps Deps) *Executor {
 		mcpReload:           deps.MCPReload,
 		mcpOAuth:            deps.MCPOAuth,
 		scheduler:           deps.Scheduler,
+		peers:               deps.Peers,
 		logger:              deps.Logger,
 		maxTokens:           deps.MaxTokens,
 		limits:              deps.Limits,
@@ -1640,6 +1651,12 @@ func (te *Executor) dispatch(ctx context.Context, call llm.ToolCall) string {
 		return te.listScheduledTasks(args)
 	case "cancel_scheduled_task":
 		return te.cancelScheduledTask(args)
+	case "peer_send":
+		return te.peerSend(ctx, args)
+	case "peer_inbox":
+		return te.peerInbox()
+	case "peer_read":
+		return te.peerRead(args)
 	case "get_version":
 		return te.getVersion()
 	case "rebuild_indexes":
