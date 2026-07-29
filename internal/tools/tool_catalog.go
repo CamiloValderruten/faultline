@@ -10,6 +10,7 @@ import (
 
 	"github.com/CamiloValderruten/faultline/internal/llm"
 	"github.com/CamiloValderruten/faultline/internal/search/bm25"
+	"github.com/CamiloValderruten/faultline/internal/search/vector"
 )
 
 // tier1Tools are always advertised in ToolDefs. Everything else is Tier 2:
@@ -54,17 +55,28 @@ var tier1Tools = map[string]struct{}{
 	"peer_read":  {},
 }
 
+const (
+	toolSearchRRFK          = 60
+	toolSearchSemanticWeight = 0.7
+	toolSearchKeywordWeight  = 0.3
+	toolSearchExactNameBoost = 1.5
+)
+
 type toolCatalog struct {
 	mu        sync.Mutex
 	byName    map[string]llm.Tool
+	docs      map[string]string // tier-2 search documents
 	search    *bm25.Index
+	vectors   *vector.Index
 	unlocked  map[string]struct{}
-	signature string // joined tier-2 names; skip rebuild when unchanged
+	signature string // joined tier-2 names; skip BM25 rebuild when unchanged
+	vectorSig string // signature last successfully embedded
 }
 
 func newToolCatalog() *toolCatalog {
 	return &toolCatalog{
 		byName:   make(map[string]llm.Tool),
+		docs:     make(map[string]string),
 		search:   bm25.New(),
 		unlocked: make(map[string]struct{}),
 	}
@@ -75,7 +87,8 @@ func (te *Executor) searchAvailableToolsDef() llm.Tool {
 		Type: llm.ToolTypeFunction,
 		Function: &llm.FunctionDef{
 			Name: "search_available_tools",
-			Description: "Search the long-tail specialty tools by intent or keyword. " +
+			Description: "Search the long-tail specialty tools by semantic intent or keyword " +
+				"(hybrid BM25 + embeddings when configured). " +
 				"Returns matching tools with full schemas and unlocks them for subsequent calls. " +
 				"Use when you suspect a capability exists but it is not in your current tool list " +
 				"(e.g. trash restore, sandbox shell, subagents, wiki, email, skills, updates).",
@@ -165,11 +178,15 @@ func (c *toolCatalog) refresh(all []llm.Tool) {
 	sort.Strings(names)
 	sig := strings.Join(names, "\n")
 	c.byName = byName
+	c.docs = docs
 	if sig == c.signature {
 		return
 	}
 	c.signature = sig
 	c.search.Build(docs)
+	// Vector index rebuilt lazily on next search (needs embedder + ctx).
+	c.vectors = nil
+	c.vectorSig = ""
 }
 
 func (c *toolCatalog) isUnlocked(name string) bool {
@@ -298,7 +315,7 @@ type toolSearchHit struct {
 	ExampleCall string `json:"example_call"`
 }
 
-func (te *Executor) searchAvailableTools(_ context.Context, argsJSON string) string {
+func (te *Executor) searchAvailableTools(ctx context.Context, argsJSON string) string {
 	if te.catalog == nil {
 		te.catalog = newToolCatalog()
 	}
@@ -325,35 +342,75 @@ func (te *Executor) searchAvailableTools(_ context.Context, argsJSON string) str
 	}
 	_ = args.IncludeDisallowed // ponytail: no separate disallowed built-in index yet
 
+	// Over-fetch each leg so RRF has room to reorder.
+	fetch := max * 3
+	if fetch < 15 {
+		fetch = 15
+	}
+
 	te.catalog.mu.Lock()
-	results := te.catalog.search.Search(query, max, nil)
-	// Exact-name boost: if query equals a tool name, force it in.
+	bm25Hits := te.catalog.search.Search(query, fetch, nil)
+	te.catalog.mu.Unlock()
+
+	var vectorPaths []string
+	if err := te.ensureToolVectors(ctx); err != nil {
+		te.logger.Warn("search_available_tools: embed catalog failed; lexical only", "error", err)
+	} else if te.embedder != nil && te.embedder.Dim() > 0 {
+		vecs, err := te.embedder.Embed(ctx, []string{query})
+		if err != nil {
+			te.logger.Warn("search_available_tools: embed query failed; lexical only", "error", err)
+		} else if len(vecs) == 1 {
+			te.catalog.mu.Lock()
+			vIdx := te.catalog.vectors
+			te.catalog.mu.Unlock()
+			if vIdx != nil && vIdx.Len() > 0 {
+				q := append([]float32(nil), vecs[0]...)
+				vres, err := vIdx.Search(q, fetch, 0, nil)
+				if err != nil {
+					te.logger.Warn("search_available_tools: vector search failed; lexical only", "error", err)
+				} else {
+					for _, r := range vres {
+						vectorPaths = append(vectorPaths, r.Path)
+					}
+				}
+			}
+		}
+	}
+
+	bm25Paths := make([]string, 0, len(bm25Hits))
+	for _, r := range bm25Hits {
+		bm25Paths = append(bm25Paths, r.Path)
+	}
+	ranked := fuseToolSearchRanks(bm25Paths, vectorPaths, max, strings.ToLower(query))
+
+	// Exact-name force-include if still missing (covers empty-index edge cases).
 	qLower := strings.ToLower(query)
+	te.catalog.mu.Lock()
 	if _, ok := te.catalog.byName[qLower]; ok {
 		if _, tier1 := tier1Tools[qLower]; !tier1 && qLower != "search_available_tools" {
 			found := false
-			for _, r := range results {
-				if r.Path == qLower {
+			for _, name := range ranked {
+				if name == qLower {
 					found = true
 					break
 				}
 			}
 			if !found {
-				results = append([]bm25.Result{{Path: qLower, Score: 1e9}}, results...)
-				if len(results) > max {
-					results = results[:max]
+				ranked = append([]string{qLower}, ranked...)
+				if len(ranked) > max {
+					ranked = ranked[:max]
 				}
 			}
 		}
 	}
-	hits := make([]toolSearchHit, 0, len(results))
-	unlock := make([]string, 0, len(results))
-	for _, r := range results {
-		t, ok := te.catalog.byName[r.Path]
+	hits := make([]toolSearchHit, 0, len(ranked))
+	unlock := make([]string, 0, len(ranked))
+	for _, name := range ranked {
+		t, ok := te.catalog.byName[name]
 		if !ok || t.Function == nil {
 			continue
 		}
-		unlock = append(unlock, r.Path)
+		unlock = append(unlock, name)
 		hits = append(hits, toolSearchHit{
 			Name:        t.Function.Name,
 			Description: t.Function.Description,
@@ -374,4 +431,121 @@ func (te *Executor) searchAvailableTools(_ context.Context, argsJSON string) str
 		return "Error: " + err.Error()
 	}
 	return string(data)
+}
+
+// ensureToolVectors embeds Tier 2 tool docs into an in-memory vector
+// index when an embedder is configured. No-op when embeddings are off
+// or Dim is still 0 (probe not finished). Rebuilds only when the
+// lexical catalog signature changes.
+func (te *Executor) ensureToolVectors(ctx context.Context) error {
+	if te.embedder == nil || te.embedder.Dim() <= 0 {
+		return nil
+	}
+	if te.catalog == nil {
+		return nil
+	}
+
+	te.catalog.mu.Lock()
+	if te.catalog.signature == te.catalog.vectorSig && te.catalog.vectors != nil {
+		te.catalog.mu.Unlock()
+		return nil
+	}
+	sig := te.catalog.signature
+	docs := te.catalog.docs
+	te.catalog.mu.Unlock()
+
+	if len(docs) == 0 {
+		te.catalog.mu.Lock()
+		te.catalog.vectors = vector.New(te.embedder.Dim(), te.embedder.Model())
+		te.catalog.vectorSig = sig
+		te.catalog.mu.Unlock()
+		return nil
+	}
+
+	names := make([]string, 0, len(docs))
+	for name := range docs {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	texts := make([]string, len(names))
+	for i, name := range names {
+		texts[i] = docs[name]
+	}
+
+	vecs, skipped, err := embedWithAdaptiveBatching(ctx, te.embedder, texts, 0, te.logger)
+	if err != nil {
+		return err
+	}
+	if skipped > 0 {
+		te.logger.Warn("search_available_tools: skipped tool embeddings", "skipped", skipped)
+	}
+
+	idx := vector.New(te.embedder.Dim(), te.embedder.Model())
+	for i, name := range names {
+		if i >= len(vecs) || vecs[i] == nil {
+			continue
+		}
+		if err := idx.Upsert(name, vecs[i]); err != nil {
+			return err
+		}
+	}
+
+	te.catalog.mu.Lock()
+	defer te.catalog.mu.Unlock()
+	// Only publish if the catalog hasn't changed under us.
+	if te.catalog.signature != sig {
+		return nil
+	}
+	te.catalog.vectors = idx
+	te.catalog.vectorSig = sig
+	return nil
+}
+
+// fuseToolSearchRanks combines BM25 and vector rankings with weighted
+// reciprocal rank fusion (0.7 semantic + 0.3 keyword). Exact tool-name
+// matches get a 1.5x score boost.
+func fuseToolSearchRanks(bm25Paths, vectorPaths []string, max int, exactName string) []string {
+	type scored struct {
+		name  string
+		score float64
+	}
+	scores := make(map[string]float64)
+
+	add := func(paths []string, weight float64) {
+		for i, name := range paths {
+			if name == "" {
+				continue
+			}
+			scores[name] += weight / float64(toolSearchRRFK+i+1)
+		}
+	}
+	add(vectorPaths, toolSearchSemanticWeight)
+	add(bm25Paths, toolSearchKeywordWeight)
+
+	if exactName != "" {
+		if s, ok := scores[exactName]; ok {
+			scores[exactName] = s * toolSearchExactNameBoost
+		} else if len(bm25Paths) > 0 || len(vectorPaths) > 0 {
+			// Name known to caller via force-include path; leave absent here.
+		}
+	}
+
+	ranked := make([]scored, 0, len(scores))
+	for name, score := range scores {
+		ranked = append(ranked, scored{name: name, score: score})
+	}
+	sort.Slice(ranked, func(i, j int) bool {
+		if ranked[i].score == ranked[j].score {
+			return ranked[i].name < ranked[j].name
+		}
+		return ranked[i].score > ranked[j].score
+	})
+	if max > 0 && len(ranked) > max {
+		ranked = ranked[:max]
+	}
+	out := make([]string, len(ranked))
+	for i, r := range ranked {
+		out[i] = r.name
+	}
+	return out
 }
