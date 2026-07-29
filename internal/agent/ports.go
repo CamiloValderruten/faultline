@@ -6,6 +6,7 @@ import (
 
 	"github.com/CamiloValderruten/faultline/internal/adapters/llm/kobold"
 	"github.com/CamiloValderruten/faultline/internal/llm"
+	"github.com/CamiloValderruten/faultline/internal/peer"
 	"github.com/CamiloValderruten/faultline/internal/schedule"
 	"github.com/CamiloValderruten/faultline/internal/search/bm25"
 	"github.com/CamiloValderruten/faultline/internal/skills"
@@ -129,4 +130,12 @@ type Subagents interface {
 	// children. Cheap (atomic load); called from the loop's
 	// per-iteration inspector update.
 	ActiveCount() int
+}
+
+// Peers is the inbox port for cross-process peer messages when
+// [peers] delivery = "inject". Pending drains unread messages
+// atomically. Nil when peers are disabled or delivery is "pull"
+// (tools-only). Child agents never receive this port.
+type Peers interface {
+	Pending() []peer.Message
 }

@@ -514,6 +514,17 @@ func main() {
 		subagentsPort = subMgr
 	}
 
+	// Peer inject port: only wired when delivery=inject. Tools still
+	// receive the mailbox for peer_send / peer_inbox / peer_read in
+	// both modes.
+	var peersPort agent.Peers
+	if peerMailbox != nil && cfg.Peers.Inject() {
+		peersPort = peerMailbox
+		logger.Info("peer messaging delivery=inject")
+	} else if peerMailbox != nil {
+		logger.Info("peer messaging delivery=pull")
+	}
+
 	a := agent.New(cfg, agent.Deps{
 		Chat:      chat,
 		Memory:    memory,
@@ -525,6 +536,7 @@ func main() {
 		Skills:    skillsPort,
 		Subagents: subagentsPort,
 		Scheduler: scheduler,
+		Peers:     peersPort,
 	}, logger)
 	defer a.Close()
 

@@ -91,6 +91,28 @@ func (in *Inbox) List() ([]Message, error) {
 	return msgs, nil
 }
 
+// Drain returns all unread messages oldest-first and clears the inbox.
+// Used when [peers] delivery = "inject".
+func (in *Inbox) Drain() ([]Message, error) {
+	in.mu.Lock()
+	defer in.mu.Unlock()
+
+	msgs, err := in.loadLocked()
+	if err != nil {
+		return nil, err
+	}
+	if len(msgs) == 0 {
+		return nil, nil
+	}
+	sort.Slice(msgs, func(i, j int) bool {
+		return msgs[i].ReceivedAt.Before(msgs[j].ReceivedAt)
+	})
+	if err := in.saveLocked(nil); err != nil {
+		return nil, err
+	}
+	return msgs, nil
+}
+
 // Read removes and returns the message with the given id.
 func (in *Inbox) Read(id string) (Message, error) {
 	in.mu.Lock()

@@ -41,6 +41,31 @@ func TestInboxEnqueueListRead(t *testing.T) {
 	}
 }
 
+func TestInboxDrainClearsAll(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "inbox.json")
+	in := NewInbox(path, 10)
+	if _, err := in.Enqueue("a", "one"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := in.Enqueue("b", "two"); err != nil {
+		t.Fatal(err)
+	}
+	drained, err := in.Drain()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(drained) != 2 || drained[0].Text != "one" || drained[1].Text != "two" {
+		t.Fatalf("drain=%+v", drained)
+	}
+	left, err := in.List()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(left) != 0 {
+		t.Fatalf("expected empty after drain, got %+v", left)
+	}
+}
+
 func TestInboxDropsOldestWhenFull(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "inbox.json")
 	in := NewInbox(path, 2)

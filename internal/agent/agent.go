@@ -17,6 +17,7 @@ import (
 	"github.com/CamiloValderruten/faultline/internal/adapters/memory/fs"
 	"github.com/CamiloValderruten/faultline/internal/config"
 	"github.com/CamiloValderruten/faultline/internal/llm"
+	"github.com/CamiloValderruten/faultline/internal/peer"
 	prompt "github.com/CamiloValderruten/faultline/internal/prompts"
 	"github.com/CamiloValderruten/faultline/internal/schedule"
 	"github.com/CamiloValderruten/faultline/internal/search/bm25"
@@ -37,6 +38,7 @@ type Agent struct {
 	skills               Skills    // nil when skills support is disabled
 	subagents            Subagents // nil for primaries with [subagent] off and for all children
 	scheduler            Scheduler // nil when scheduled tasks are disabled
+	peers                Peers     // nil when peers off or delivery=pull
 	logger               *slog.Logger
 	maxTurns             int    // 0 means unlimited; >0 caps Run loop iterations (subagent use)
 	systemPromptOverride string // when non-empty, replaces prompts["system"] (subagent use)
@@ -67,6 +69,7 @@ type Deps struct {
 	Skills    Skills    // optional
 	Subagents Subagents // optional; primary only
 	Scheduler Scheduler // optional; primary only
+	Peers     Peers     // optional; primary only, inject delivery
 
 	// MaxTurns caps the Run loop's iteration count. Zero means
 	// unlimited (the normal primary case). Used by subagents to
@@ -99,6 +102,7 @@ func New(cfg *config.Config, deps Deps, logger *slog.Logger) *Agent {
 		skills:               deps.Skills,
 		subagents:            deps.Subagents,
 		scheduler:            deps.Scheduler,
+		peers:                deps.Peers,
 		logger:               logger,
 		maxTurns:             deps.MaxTurns,
 		systemPromptOverride: deps.SystemPromptOverride,
@@ -931,14 +935,14 @@ func (a *Agent) gatherContextMemories() []bm25.Result {
 	return results
 }
 
-// injectPendingMessages drains both the operator and the subagent
-// inboxes and appends any pending entries to the conversation. Returns
-// the updated messages and whether anything was injected.
+// injectPendingMessages drains the operator, subagent, scheduler, and
+// (when delivery=inject) peer inboxes and appends any pending entries
+// to the conversation. Returns the updated messages and whether
+// anything was injected.
 //
-// Both queues are drained on every call (rather than checking
-// HasPending first) because the read is the same primitive as the
-// drain in both adapters; there is no probe-then-take race to worry
-// about.
+// Queues are drained on every call (rather than checking HasPending
+// first) because the read is the same primitive as the drain; there
+// is no probe-then-take race to worry about.
 func (a *Agent) injectPendingMessages(messages []llm.Message) ([]llm.Message, bool) {
 	var pendingOp []string
 	if a.operator != nil {
@@ -949,8 +953,12 @@ func (a *Agent) injectPendingMessages(messages []llm.Message) ([]llm.Message, bo
 		pendingSub = a.subagents.Pending()
 	}
 	pendingScheduled := a.dueScheduledTasks()
+	var pendingPeers []peer.Message
+	if a.peers != nil {
+		pendingPeers = a.peers.Pending()
+	}
 
-	if len(pendingOp) == 0 && len(pendingSub) == 0 && len(pendingScheduled) == 0 {
+	if len(pendingOp) == 0 && len(pendingSub) == 0 && len(pendingScheduled) == 0 && len(pendingPeers) == 0 {
 		return messages, false
 	}
 
@@ -963,7 +971,28 @@ func (a *Agent) injectPendingMessages(messages []llm.Message) ([]llm.Message, bo
 	if len(pendingScheduled) > 0 {
 		messages = a.appendScheduledTasks(messages, pendingScheduled)
 	}
+	if len(pendingPeers) > 0 {
+		messages = a.appendPeerMessages(messages, pendingPeers)
+	}
 	return messages, true
+}
+
+// appendPeerMessages formats drained peer inbox entries as user turns.
+// Mirrors the collaborator/subagent header shape so the model can
+// pattern-match consistently.
+func (a *Agent) appendPeerMessages(messages []llm.Message, pending []peer.Message) []llm.Message {
+	for _, msg := range pending {
+		a.logger.Info("injecting peer message into conversation",
+			"from", msg.From,
+			"id", msg.ID,
+		)
+		messages = append(messages, llm.Message{
+			Role: llm.RoleUser,
+			Content: fmt.Sprintf("[Peer message from %s - %s]\n\n%s\n\nReply with peer_send if a response is warranted; otherwise continue your work. Prefer short peer replies — this is async mail, not a chat loop.",
+				msg.From, time.Now().Format(time.RFC1123), msg.Text),
+		})
+	}
+	return messages
 }
 
 func (a *Agent) dueScheduledTasks() []schedule.Task {

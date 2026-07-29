@@ -221,12 +221,18 @@ func (te *Executor) sleep(ctx context.Context, argsJSON string) string {
 		target = te.maxSleep
 	}
 
-	// If a collaborator message is already queued at entry, do not sleep
-	// through it. The agent should respond before doing anything else.
+	// If a collaborator or peer message is already queued at entry, do
+	// not sleep through it. The agent should respond before doing
+	// anything else.
 	if te.messenger != nil && te.messenger.HasPending() {
 		te.logger.Info("sleep skipped: collaborator message already pending",
 			"requested_s", args.Seconds)
 		return clampNote + "Did not sleep: a collaborator message is already pending. Handle it before sleeping."
+	}
+	if te.peers != nil && te.peers.HasPending() {
+		te.logger.Info("sleep skipped: peer message already pending",
+			"requested_s", args.Seconds)
+		return clampNote + "Did not sleep: a peer message is already pending. Handle it before sleeping."
 	}
 
 	te.logger.Info("sleep started", "requested_s", args.Seconds, "actual_s", int(target.Seconds()))
@@ -257,6 +263,11 @@ func (te *Executor) sleep(ctx context.Context, argsJSON string) string {
 				elapsed := time.Since(start).Round(time.Second)
 				te.logger.Info("sleep interrupted by collaborator message", "elapsed_s", int(elapsed.Seconds()))
 				return clampNote + fmt.Sprintf("Slept for %s then interrupted: collaborator message pending.", elapsed)
+			}
+			if te.peers != nil && te.peers.HasPending() {
+				elapsed := time.Since(start).Round(time.Second)
+				te.logger.Info("sleep interrupted by peer message", "elapsed_s", int(elapsed.Seconds()))
+				return clampNote + fmt.Sprintf("Slept for %s then interrupted: peer message pending.", elapsed)
 			}
 			// Belt-and-braces: if the timer fires between selects somehow,
 			// still exit at the deadline rather than oversleeping.

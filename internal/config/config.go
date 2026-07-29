@@ -511,6 +511,12 @@ func (a AdminConfig) Active() bool {
 	return a.Enabled && a.Bind != ""
 }
 
+// Peer delivery modes for [peers].delivery.
+const (
+	PeersDeliveryPull   = "pull"
+	PeersDeliveryInject = "inject"
+)
+
 // PeersConfig holds settings for cross-process agent messaging.
 // Each agent has its own inbound token; outbound sends use the
 // token listed on that peer's [[peers.agents]] entry.
@@ -535,6 +541,12 @@ type PeersConfig struct {
 	// MaxInbox caps retained unread messages; oldest are dropped.
 	MaxInbox int `toml:"max_inbox"`
 
+	// Delivery controls how inbound peer messages enter the agent
+	// loop. "pull" (default): only via peer_inbox / peer_read tools.
+	// "inject": drain into the conversation between turns like
+	// subagent reports (never mid-generation).
+	Delivery string `toml:"delivery"`
+
 	// Agents are remote peers this agent may send to.
 	Agents []PeerAgentConfig `toml:"agents"`
 }
@@ -549,6 +561,12 @@ type PeerAgentConfig struct {
 // Active reports whether peer messaging should be wired up.
 func (p PeersConfig) Active() bool {
 	return p.Enabled
+}
+
+// Inject reports whether inbound peer messages should be drained into
+// the conversation between turns.
+func (p PeersConfig) Inject() bool {
+	return p.Active() && strings.EqualFold(strings.TrimSpace(p.Delivery), PeersDeliveryInject)
 }
 
 // EmailConfig holds optional IMAP email connection settings.
@@ -671,6 +689,7 @@ func Default() *Config {
 			Listen:    "127.0.0.1:9101",
 			InboxFile: "./peer-inbox.json",
 			MaxInbox:  100,
+			Delivery:  PeersDeliveryPull,
 		},
 	}
 }
@@ -778,6 +797,15 @@ func Load(path string) (*Config, error) {
 	}
 	if cfg.Peers.MaxInbox <= 0 {
 		cfg.Peers.MaxInbox = 100
+	}
+	if strings.TrimSpace(cfg.Peers.Delivery) == "" {
+		cfg.Peers.Delivery = PeersDeliveryPull
+	}
+	switch strings.ToLower(strings.TrimSpace(cfg.Peers.Delivery)) {
+	case PeersDeliveryPull, PeersDeliveryInject:
+		cfg.Peers.Delivery = strings.ToLower(strings.TrimSpace(cfg.Peers.Delivery))
+	default:
+		return nil, fmt.Errorf("[peers] delivery must be %q or %q", PeersDeliveryPull, PeersDeliveryInject)
 	}
 	if cfg.Peers.Enabled {
 		if strings.TrimSpace(cfg.Peers.Name) == "" {

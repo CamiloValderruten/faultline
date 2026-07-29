@@ -121,3 +121,25 @@ func (m *Mailbox) List() ([]Message, error) {
 func (m *Mailbox) Read(id string) (Message, error) {
 	return m.Inbox.Read(id)
 }
+
+// HasPending reports whether any unread peer messages are waiting.
+func (m *Mailbox) HasPending() bool {
+	if m == nil || m.Inbox == nil {
+		return false
+	}
+	msgs, err := m.Inbox.List()
+	return err == nil && len(msgs) > 0
+}
+
+// Pending drains and returns all unread peer messages (oldest first).
+// Satisfies agent.Peers when delivery = "inject".
+func (m *Mailbox) Pending() []Message {
+	if m == nil || m.Inbox == nil {
+		return nil
+	}
+	msgs, err := m.Inbox.Drain()
+	if err != nil || len(msgs) == 0 {
+		return nil
+	}
+	return msgs
+}

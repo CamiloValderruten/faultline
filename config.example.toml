@@ -463,12 +463,18 @@ run_timeout = "30m"
 # purpose = "Deep research, architecture analysis, careful reasoning. Slow."
 
 # ---------------------------------------------------------------------------
-# [peers] — pull-only messaging between Faultline processes.
+# [peers] — messaging between Faultline processes.
 #
 # When enabled, this process binds a small HTTP listener (separate from
-# [admin]) that accepts POSTs into a disk inbox. The agent never auto-
-# injects peer messages into its conversation — it only spends tokens
-# when it calls peer_inbox / peer_read / peer_send.
+# [admin]) that accepts POSTs into a disk inbox.
+#
+# delivery = "pull" (default): messages stay in the inbox until the
+# agent calls peer_inbox / peer_read. No auto-inject; no token burn
+# from idle peer traffic.
+#
+# delivery = "inject": unread messages are drained into the conversation
+# between turns (like subagent reports). peer_send / peer_inbox /
+# peer_read remain available.
 #
 # Each agent has its own inbound token. To send to bob, alice lists bob
 # under [[peers.agents]] with bob's listen URL and bob's token.
@@ -480,6 +486,7 @@ listen = "127.0.0.1:9101"
 token = "replace-with-alice-secret"
 inbox_file = "./peer-inbox.json"
 max_inbox = 100
+delivery = "pull"
 
 # [[peers.agents]]
 # name = "bob"

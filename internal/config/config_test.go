@@ -375,6 +375,7 @@ name = "alice"
 listen = "127.0.0.1:9101"
 token = "alice-secret"
 inbox_file = "./peer-inbox.json"
+delivery = "inject"
 
 [[peers.agents]]
 name = "bob"
@@ -390,5 +391,29 @@ token = "bob-secret"
 	}
 	if !cfg.Peers.Active() || cfg.Peers.Name != "alice" || len(cfg.Peers.Agents) != 1 {
 		t.Fatalf("peers=%+v", cfg.Peers)
+	}
+	if !cfg.Peers.Inject() || cfg.Peers.Delivery != PeersDeliveryInject {
+		t.Fatalf("expected inject delivery, got %+v", cfg.Peers)
+	}
+}
+
+func TestLoad_PeersRejectsBadDelivery(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.toml")
+	content := `
+[api]
+url = "http://localhost/v1"
+model = "x"
+
+[peers]
+enabled = true
+name = "alice"
+token = "alice-secret"
+delivery = "push"
+`
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Load(path); err == nil {
+		t.Fatal("expected error for bad delivery")
 	}
 }
