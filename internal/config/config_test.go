@@ -342,3 +342,53 @@ channel_id = "2"
 		t.Fatal("expected error when both telegram and discord are enabled")
 	}
 }
+
+func TestLoad_PeersRequiresNameAndToken(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.toml")
+	content := `
+[api]
+url = "http://localhost/v1"
+model = "x"
+
+[peers]
+enabled = true
+listen = "127.0.0.1:9101"
+`
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Load(path); err == nil {
+		t.Fatal("expected error when peers enabled without name/token")
+	}
+}
+
+func TestLoad_PeersOK(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.toml")
+	content := `
+[api]
+url = "http://localhost/v1"
+model = "x"
+
+[peers]
+enabled = true
+name = "alice"
+listen = "127.0.0.1:9101"
+token = "alice-secret"
+inbox_file = "./peer-inbox.json"
+
+[[peers.agents]]
+name = "bob"
+url = "http://127.0.0.1:9102"
+token = "bob-secret"
+`
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !cfg.Peers.Active() || cfg.Peers.Name != "alice" || len(cfg.Peers.Agents) != 1 {
+		t.Fatalf("peers=%+v", cfg.Peers)
+	}
+}

@@ -54,6 +54,12 @@ type Config struct {
 	// password hashes in users.toml, single auto-provisioned admin
 	// user on first run.
 	Admin AdminConfig `toml:"admin"`
+
+	// Peers is optional; when Enabled, this process listens for
+	// pull-only peer messages from other Faultline instances and
+	// can send to configured peers via peer_* tools. Messages are
+	// never auto-injected into the agent loop.
+	Peers PeersConfig `toml:"peers"`
 }
 
 // APIConfig holds LLM API connection settings.
@@ -505,6 +511,46 @@ func (a AdminConfig) Active() bool {
 	return a.Enabled && a.Bind != ""
 }
 
+// PeersConfig holds settings for cross-process agent messaging.
+// Each agent has its own inbound token; outbound sends use the
+// token listed on that peer's [[peers.agents]] entry.
+type PeersConfig struct {
+	Enabled bool `toml:"enabled"`
+
+	// Name is this agent's identity, sent as the "from" field on
+	// outbound messages and used by peers to address replies.
+	Name string `toml:"name"`
+
+	// Listen is the loopback address:port for the peer inbox HTTP
+	// server (separate from [admin]). Default "127.0.0.1:9101".
+	Listen string `toml:"listen"`
+
+	// Token authenticates inbound POSTs to this agent's /inbox.
+	Token string `toml:"token"`
+
+	// InboxFile is the on-disk JSON queue of unread peer messages.
+	// Default "./peer-inbox.json".
+	InboxFile string `toml:"inbox_file"`
+
+	// MaxInbox caps retained unread messages; oldest are dropped.
+	MaxInbox int `toml:"max_inbox"`
+
+	// Agents are remote peers this agent may send to.
+	Agents []PeerAgentConfig `toml:"agents"`
+}
+
+// PeerAgentConfig describes one remote Faultline peer.
+type PeerAgentConfig struct {
+	Name  string `toml:"name"`
+	URL   string `toml:"url"`
+	Token string `toml:"token"`
+}
+
+// Active reports whether peer messaging should be wired up.
+func (p PeersConfig) Active() bool {
+	return p.Enabled
+}
+
 // EmailConfig holds optional IMAP email connection settings.
 type EmailConfig struct {
 	Host     string `toml:"host"`
@@ -620,6 +666,12 @@ func Default() *Config {
 			SkillsFile: "./skills.toml",
 			SessionTTL: duration(12 * time.Hour),
 		},
+		Peers: PeersConfig{
+			Enabled:   false,
+			Listen:    "127.0.0.1:9101",
+			InboxFile: "./peer-inbox.json",
+			MaxInbox:  100,
+		},
 	}
 }
 
@@ -716,6 +768,29 @@ func Load(path string) (*Config, error) {
 	}
 	if cfg.Deepgram.TTSModel == "" {
 		cfg.Deepgram.TTSModel = "aura-2-thalia-en"
+	}
+
+	if cfg.Peers.Listen == "" {
+		cfg.Peers.Listen = "127.0.0.1:9101"
+	}
+	if cfg.Peers.InboxFile == "" {
+		cfg.Peers.InboxFile = "./peer-inbox.json"
+	}
+	if cfg.Peers.MaxInbox <= 0 {
+		cfg.Peers.MaxInbox = 100
+	}
+	if cfg.Peers.Enabled {
+		if strings.TrimSpace(cfg.Peers.Name) == "" {
+			return nil, fmt.Errorf("[peers] name is required when enabled")
+		}
+		if strings.TrimSpace(cfg.Peers.Token) == "" {
+			return nil, fmt.Errorf("[peers] token is required when enabled")
+		}
+		for i, a := range cfg.Peers.Agents {
+			if strings.TrimSpace(a.Name) == "" || strings.TrimSpace(a.URL) == "" || strings.TrimSpace(a.Token) == "" {
+				return nil, fmt.Errorf("[peers.agents.%d] name, url, and token are required", i)
+			}
+		}
 	}
 
 	if cfg.Telegram.Enabled() && cfg.Discord.Enabled() {
