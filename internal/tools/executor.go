@@ -138,9 +138,17 @@ var subagentForbidden = map[string]struct{}{
 	"subagent_cancel":           {},
 }
 
-// ToolDefs returns the tool definitions for the OpenAI API.
-// Tools are conditional on what capabilities are available.
+// ToolDefs returns the tool definitions advertised to the LLM.
+// Tier 1 tools plus any Tier 2 tools unlocked via search_available_tools.
+// The full registry (including locked Tier 2) is built by buildAllToolDefs.
 func (te *Executor) ToolDefs() []llm.Tool {
+	return te.applyToolTiers(te.buildAllToolDefs())
+}
+
+// buildAllToolDefs returns every tool this executor can run, conditional
+// on wired capabilities. Used for advertising (via applyToolTiers) and
+// for the Tier 2 search index.
+func (te *Executor) buildAllToolDefs() []llm.Tool {
 	tools := []llm.Tool{
 		{
 			Type: llm.ToolTypeFunction,
@@ -1371,6 +1379,11 @@ type Executor struct {
 	// observer at the composition root's discretion; the primary
 	// always carries it when admin is enabled.
 	observer Observer
+
+	// catalog holds the Tier 2 search index and unlock set for
+	// search_available_tools. Lazily created; never nil after first
+	// ToolDefs/search call.
+	catalog *toolCatalog
 }
 
 // Deps bundles the dependencies an Executor needs. Each Executor
@@ -1502,6 +1515,7 @@ func New(deps Deps) *Executor {
 		subagentMgr:         deps.SubagentManager,
 		subagentReportFn:    deps.SubagentReportFn,
 		observer:            deps.Observer,
+		catalog:             newToolCatalog(),
 		http: &http.Client{
 			Timeout: 30 * time.Second,
 		},
@@ -1657,6 +1671,8 @@ func (te *Executor) dispatch(ctx context.Context, call llm.ToolCall) string {
 		return te.peerInbox()
 	case "peer_read":
 		return te.peerRead(args)
+	case "search_available_tools":
+		return te.searchAvailableTools(ctx, args)
 	case "get_version":
 		return te.getVersion()
 	case "rebuild_indexes":

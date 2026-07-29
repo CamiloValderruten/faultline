@@ -185,9 +185,9 @@ func TestMCPConfigUpdateReloadsLiveToolSurface(t *testing.T) {
 	if !oldCaller.closed {
 		t.Fatal("old MCP caller should close after reload when no subagents are active")
 	}
-	names := toolDefNames(te.ToolDefs())
+	names := toolDefNames(te.buildAllToolDefs())
 	if !names["mcp_github_search_repositories"] {
-		t.Fatal("expected reloaded allowlisted MCP tool in ToolDefs")
+		t.Fatal("expected reloaded allowlisted MCP tool in tool registry")
 	}
 }
 
