@@ -45,15 +45,14 @@ func TestInjectPendingMessagesMarksCollaborator(t *testing.T) {
 	if !strings.Contains(messages[0].Content, "assistant text is not delivered") {
 		t.Fatalf("missing delivery guidance:\n%s", messages[0].Content)
 	}
-	if !strings.Contains(messages[0].Content, "on it") {
-		t.Fatalf("missing early-ack guidance:\n%s", messages[0].Content)
+	if !strings.Contains(messages[0].Content, "not required") {
+		t.Fatalf("missing optional-ack guidance:\n%s", messages[0].Content)
 	}
 }
 
 func TestRunNudgeOnTextOnlyWhileDeliveryDebt(t *testing.T) {
 	chat := &scriptedChat{responses: []*llm.ChatResponse{
 		textOnlyResponse("I looked it up; balance is $1."),
-		// After the debt nudge, send_message so the loop can exit cleanly.
 		toolCallResponse("send_message", `{"text":"balance is $1"}`),
 	}}
 	tools := &recordingTools{results: map[string]string{
@@ -85,10 +84,34 @@ func TestRunNudgeOnTextOnlyWhileDeliveryDebt(t *testing.T) {
 	}
 }
 
+func TestRunAllowsResearchToolsWhileDeliveryDebt(t *testing.T) {
+	chat := &scriptedChat{responses: []*llm.ChatResponse{
+		toolCallResponse("skill_activate", `{"name":"finances"}`),
+		toolCallResponse("send_message", `{"text":"July groceries were $412."}`),
+	}}
+	tools := &recordingTools{results: map[string]string{
+		"skill_activate": "skill loaded",
+		"send_message":   "Message sent to collaborator.",
+	}}
+	op := &scriptedOperator{batches: [][]string{{"quick question"}}}
+	agent := newDeliveryDebtAgent(chat, tools, op, 2)
+
+	if err := agent.Run(context.Background(), make(chan struct{})); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	if tools.execCount["skill_activate"] != 1 {
+		t.Fatalf("skill_activate executions = %d, want 1 (research allowed before send)", tools.execCount["skill_activate"])
+	}
+	if tools.execCount["send_message"] != 1 {
+		t.Fatalf("send_message executions = %d, want 1", tools.execCount["send_message"])
+	}
+}
+
 func TestRunBlocksSleepWhileDeliveryDebt(t *testing.T) {
 	chat := &scriptedChat{responses: []*llm.ChatResponse{
 		toolCallResponse("sleep", `{"seconds":60}`),
-		toolCallResponse("send_message", `{"text":"on it"}`),
+		toolCallResponse("send_message", `{"text":"Looking up the mortgage balance now."}`),
 	}}
 	tools := &recordingTools{results: map[string]string{
 		"sleep":        "Slept for 60s",
@@ -109,7 +132,7 @@ func TestRunBlocksSleepWhileDeliveryDebt(t *testing.T) {
 	}
 	var sawBlocked bool
 	for _, m := range chat.seen {
-		if m.Role == llm.RoleTool && strings.Contains(m.Content, "collaborator reply still owed") {
+		if m.Role == llm.RoleTool && strings.Contains(m.Content, "before sleeping") {
 			sawBlocked = true
 		}
 	}
@@ -120,7 +143,7 @@ func TestRunBlocksSleepWhileDeliveryDebt(t *testing.T) {
 
 func TestRunClearsDebtOnSuccessfulSend(t *testing.T) {
 	chat := &scriptedChat{responses: []*llm.ChatResponse{
-		toolCallResponse("send_message", `{"text":"on it"}`),
+		toolCallResponse("send_message", `{"text":"Pulling your July spending from Tiller."}`),
 		toolCallResponse("sleep", `{"seconds":1}`),
 	}}
 	tools := &recordingTools{results: map[string]string{
@@ -188,7 +211,6 @@ type scriptedChat struct {
 func (c *scriptedChat) Chat(_ context.Context, req llm.ChatRequest) (*llm.ChatResponse, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	// Keep the latest full conversation (each request includes prior turns).
 	c.seen = append([]llm.Message(nil), req.Messages...)
 	if len(c.responses) == 0 {
 		return textOnlyResponse("done"), nil
@@ -233,6 +255,7 @@ func (t *recordingTools) ToolDefs() []llm.Tool {
 	return []llm.Tool{
 		{Type: llm.ToolTypeFunction, Function: &llm.FunctionDef{Name: "send_message", Parameters: map[string]any{"type": "object"}}},
 		{Type: llm.ToolTypeFunction, Function: &llm.FunctionDef{Name: "sleep", Parameters: map[string]any{"type": "object"}}},
+		{Type: llm.ToolTypeFunction, Function: &llm.FunctionDef{Name: "skill_activate", Parameters: map[string]any{"type": "object"}}},
 	}
 }
 

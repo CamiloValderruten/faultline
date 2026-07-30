@@ -14,11 +14,13 @@ const collaboratorDeliveryDebtPrompt = `[Time: %s]
 
 Your collaborator is still waiting. Your previous assistant text was NOT delivered to them — only send_message / send_rich_message / send_voice_message reach Discord/Telegram.
 
-Call one of those tools NOW with your reply (or a short acknowledgment like "on it" if you still need tools). Do not sleep, and do not reply with text-only content.`
+Call one of those tools NOW with your reply. You may use other tools first if you still need them; do not sleep and do not reply with text-only content.`
 
-// sleepBlockedByDeliveryDebt is returned as the sleep tool result when a
-// collaborator delivery debt is outstanding. Preserves tool_call_id pairing.
-const sleepBlockedByDeliveryDebt = `Error: collaborator reply still owed. Call send_message (or send_rich_message / send_voice_message) to deliver a reply — even a short "on it" — before sleeping.`
+// sleepBlockedByDeliveryDebt is returned when the model calls sleep while a
+// collaborator delivery debt is outstanding. Research tools stay allowed;
+// sleep is gated so the agent cannot nap before delivering a reply.
+// Preserves tool_call_id pairing.
+const sleepBlockedByDeliveryDebt = `Error: collaborator reply still owed. Call send_message (or send_rich_message / send_voice_message) with your reply before sleeping.`
 
 func isCollaboratorSendTool(name string) bool {
 	switch name {
@@ -42,10 +44,12 @@ func collaboratorSendSucceeded(name, result string) bool {
 	return true
 }
 
-// executeToolCalls runs each tool call, rejecting sleep while
-// collaboratorReplyOwed is set and clearing that debt after a successful
-// collaborator send. debt may be nil when the caller does not track it
-// (should not happen on the primary loop).
+// executeToolCalls runs each tool call. While collaboratorReplyOwed is set,
+// sleep is rejected so the model cannot nap before delivering a reply;
+// other tools (research, skills, MCP) remain allowed. An early
+// acknowledgment send is optional — the first successful send_* may be the
+// full answer. Debt clears after a successful send. debt may be nil when
+// the caller does not track it (e.g. compaction).
 func (a *Agent) executeToolCalls(ctx context.Context, messages []llm.Message, toolCalls []llm.ToolCall, debt *bool) []llm.Message {
 	a.tools.SetContextInfo(a.countMessageTokens(messages))
 	for _, tc := range toolCalls {
