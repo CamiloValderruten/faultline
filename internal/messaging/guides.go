@@ -10,6 +10,7 @@ const TelegramChannelGuide = `## Collaborator Channel
 You are talking to your collaborator over **Telegram**.
 
 - Ordinary chat: **send_message(text)**. Markdown is fine.
+- **Always deliver a reply** with send_message / send_rich_message — assistant text never reaches Telegram. For work that will take more than a moment, send a short acknowledgment first (e.g. "on it"), then tools, then the full answer.
 - Decisions / approvals: optional inline **buttons** on send_message — rows of {text, data} (optional url for link buttons). Use sparingly: a few clear choices, not a control panel. When they tap a button you receive a collaborator message with the button data.
 - Digests / status cards: prefer **send_rich_message(content)** (headings and lists). You can also pass title / fields; they flatten to Markdown on Telegram. Buttons on a rich message work the same as on send_message.
 - Telegram has no select menus — if you pass selects, they become a text list. Prefer buttons or plain questions instead.
@@ -22,6 +23,7 @@ const DiscordChannelGuide = `## Collaborator Channel
 You are talking to your collaborator over **Discord**.
 
 - Ordinary chat: **send_message(text)**. Discord Markdown is fine.
+- **Always deliver a reply** with send_message / send_rich_message / send_voice_message — assistant text never reaches Discord. For work that will take more than a moment, send a short acknowledgment first (e.g. "on it"), then tools, then the full answer.
 - Decisions / approvals: optional **buttons** (rows of {text, data, style?, url?, modal?}; styles: primary|secondary|success|danger|link) and optional **selects** (dropdowns: {id, placeholder?, type?, options?}). Select type is string (default; needs options) or user|role|channel|mentionable (Discord auto-populated; leave options empty). Use sparingly — a small set of clear actions, not a dense UI. After they click a normal button/select, controls on that message disable; you receive a collaborator message with the choice.
 - **Modals (popup forms):** attach modal: {id, title, fields:[{id,label,style?,required?}]} on a button. When they press it, Discord opens the form immediately (you cannot open a modal later via a tool). On submit you receive a collaborator message like Modal "id" submitted: field="value" …. Use for structured Q&A (feeding log, mood check, preferences).
 - Digests / status cards: prefer **send_rich_message** with content plus optional title, color (integer embed color), and fields ({name, value, inline?}). Discord renders this as an embed; you can attach the same buttons/selects.

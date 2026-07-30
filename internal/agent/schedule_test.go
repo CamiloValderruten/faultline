@@ -71,9 +71,12 @@ func TestInjectPendingMessagesIncludesScheduledTasks(t *testing.T) {
 		}},
 	}}
 
-	messages, injected := a.injectPendingMessages(nil)
+	messages, injected, collab := a.injectPendingMessages(nil)
 	if !injected {
 		t.Fatal("injected = false, want true")
+	}
+	if collab {
+		t.Fatal("collab = true for scheduled-only inject, want false")
 	}
 	if len(messages) != 1 {
 		t.Fatalf("messages len = %d, want 1", len(messages))

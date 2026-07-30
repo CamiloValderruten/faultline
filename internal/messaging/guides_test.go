@@ -35,4 +35,13 @@ func TestChannelGuides(t *testing.T) {
 	if !strings.Contains(DiscordChannelGuide, "Modals") {
 		t.Fatal("discord guide should mention modals")
 	}
+	if !strings.Contains(DiscordChannelGuide, "Always deliver a reply") {
+		t.Fatal("discord guide should require delivered replies")
+	}
+	if !strings.Contains(TelegramChannelGuide, "Always deliver a reply") {
+		t.Fatal("telegram guide should require delivered replies")
+	}
+	if !strings.Contains(DiscordChannelGuide, "on it") {
+		t.Fatal("discord guide should encourage early acknowledgments")
+	}
 }
