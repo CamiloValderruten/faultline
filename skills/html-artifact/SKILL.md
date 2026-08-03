@@ -3,11 +3,11 @@ name: html-artifact
 description: >
   Create shareable visual deliverables (Artifact/Canvas-style) via the HTML
   publishing harness — dashboards, charts, designed letters, one-off tools —
-  then ALWAYS deliver with a Discord link button (never file-only or raw URL
-  alone when Discord works). Use when Discord text cannot carry the answer,
-  or the user wants something to look at / share. Activate for artifact,
-  canvas, visual page, dashboard, chart page, publish HTML, or "make a
-  page/site for this".
+  then ALWAYS deliver with a Discord link button. Never use send_file / file
+  attach for canvases. Use when Discord text cannot carry the answer, or the
+  user wants something to look at / share. Activate for artifact, canvas,
+  visual page, dashboard, chart page, publish HTML, or "make a page/site
+  for this".
 ---
 
 # HTML Artifact
@@ -15,6 +15,8 @@ description: >
 Ship a **visual deliverable** the collaborator opens in a browser — like Claude Artifacts or Cursor Canvas — backed by Faultline's HTML publishing harness.
 
 You write files into the sandbox publish root; `[publish]` serves them; you **always** hand the user a Discord **link button**. Publishing without a button is incomplete.
+
+**Hard rule — delivery is button-only.** Never call `send_file` (or any file attach) for a canvas/page. Not as a fallback, not "also", not when the link 404s. Fix the publish path and send the link button.
 
 ## When to use
 
@@ -61,11 +63,11 @@ Naming: lowercase, dash-separated, short. Examples: `luca-weight-2026-08.html`, 
    - `filename`: `<slug>.{md,html}` (flat; no path separators)
    - Nested assets under `/output/html/assets/` need `sandbox_shell` (mkdir + write); flat pages do not.
 3. **Build the public URL:** `{public_base_url}/html/<slug>.{md,html}`.
-4. **Always deliver with a Discord link button** — required every time a canvas/page is created or updated. Do not send the HTML as a downloadable file, paste a bare URL as the only delivery, or stop after `sandbox_write`. Do not paste the whole page into Discord.
+4. **Always deliver with a Discord link button** — required every time a canvas/page is created or updated. Do not paste a bare URL as the only delivery, or stop after `sandbox_write`. Do not paste the whole page into Discord.
 
 ### Discord link button (mandatory)
 
-Every successful publish **must** call `send_message` or `send_rich_message` with a link button pointing at the public URL:
+Every successful publish **must** call `send_message` or `send_rich_message` with a link button pointing at the public URL. **Never** `send_file` / file attach for this skill.
 
 ```json
 {
@@ -86,8 +88,9 @@ Every successful publish **must** call `send_message` or `send_rich_message` wit
 - Keep the message body to one short line + optional context.
 - `send_rich_message` works the same for `buttons` if you want an embed title/fields.
 - Updating a living page: send a fresh link button again (same URL is fine).
+- If the URL 404s: fix the write path (`folder: "html"`), republish, send the button again — still no file attach.
 
-**Only if Discord/messaging is unavailable:** publish the file and include the raw URL in text. That fallback is exceptional — not the default.
+**Only if Discord/messaging itself is unavailable:** include the raw URL in text. Still never file-attach the HTML.
 
 ## Design bar (Artifact quality)
 
@@ -113,6 +116,6 @@ When token gating lands, append the token to the link-button URL and keep the sa
 
 - [ ] Wrote with `sandbox_write` `folder: "html"` (not `"output"`)
 - [ ] URL uses **this** agent's host
-- [ ] Sent Discord **link button** with that URL (required — not optional)
-- [ ] Did **not** rely on file attach / bare URL alone when Discord works
+- [ ] Sent Discord **link button** with that URL (required)
+- [ ] Did **not** call `send_file` / file attach (never for canvases)
 - [ ] No keys/tokens/camera URLs/prompts in the page

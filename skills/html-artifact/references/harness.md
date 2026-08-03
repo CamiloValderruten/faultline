@@ -28,10 +28,10 @@ Nested `assets/` still need `sandbox_shell` (flat `sandbox_*` tools only).
 
 No directory listing: `/html/` is 404 unless `index.html` exists.
 
-## Discord delivery (mandatory)
+## Discord delivery (mandatory, button-only)
 
-Every published canvas **must** be delivered with a link button via `send_message` / `send_rich_message` — not file attach, not bare URL alone:
+Every published canvas **must** be delivered with a link button via `send_message` / `send_rich_message`:
 
 `{"text":"Open","style":"link","url":"https://<host>/html/<file>"}`
 
-Raw URL in text only if Discord is unavailable.
+**Never** `send_file` / file attach for canvases — not as fallback, not in addition to the button. If Discord is down, raw URL in text only.
