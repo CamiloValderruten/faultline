@@ -160,12 +160,17 @@ type LogConfig struct {
 
 // SandboxConfig holds Python sandbox execution settings.
 type SandboxConfig struct {
-	Enabled     bool     `toml:"enabled"`
-	Image       string   `toml:"image"`
-	Dir         string   `toml:"dir"`
-	Timeout     duration `toml:"timeout"`
-	Network     bool     `toml:"network"`
-	MemoryLimit string   `toml:"memory_limit"`
+	Enabled     bool              `toml:"enabled"`
+	Image       string            `toml:"image"`
+	Dir         string            `toml:"dir"`
+	Timeout     duration          `toml:"timeout"`
+	Network     bool              `toml:"network"`
+	MemoryLimit string            `toml:"memory_limit"`
+	// Env is injected as docker -e flags into every sandbox container
+	// (sandbox_execute, sandbox_shell, skill_execute, MCP stdio). Use
+	// GH_TOKEN so the in-container gh CLI (and git via `gh auth setup-git`)
+	// can authenticate. Values are never written to debug logs.
+	Env map[string]string `toml:"env"`
 }
 
 // LimitsConfig holds configurable size caps for content the agent sees in
@@ -621,9 +626,9 @@ func Default() *Config {
 		},
 		Sandbox: SandboxConfig{
 			Enabled: false,
-			// Faultline's own multi-runtime sandbox image (Arch-based;
+			// Faultline's own multi-runtime sandbox image (Debian-based;
 			// ships uv/uvx, python+pip, node+npm+npx, bun, deno, go,
-			// plus common LLM-friendly CLI tools). Built from
+			// plus common LLM-friendly CLI tools including gh). Built from
 			// docker/sandbox/Dockerfile and published by the
 			// sandbox-image GH Actions workflow. Pin to a versioned
 			// tag in your config.toml if you want a specific image

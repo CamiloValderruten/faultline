@@ -14,7 +14,7 @@
 # agent via the sandbox_shell tool. This image bakes in the runtimes the
 # agent is most likely to want: python+pip, uv+uvx, node+npm+npx, bun,
 # deno, go, Chromium-linked shared libraries, plus common LLM-friendly CLI
-# tools (curl, wget, git, jq, ripgrep, fd, ...). Browser binaries are left
+# tools (curl, wget, git, gh, jq, ripgrep, fd, ...). Browser binaries are left
 # to Playwright/Puppeteer or MCP packages so the default image stays smaller;
 # those downloads expect this Debian desktop stack to already be present.
 #
@@ -75,6 +75,24 @@ RUN apt-get update \
         libxkbcommon0 libxshmfence1 \
     && ln -sf /usr/bin/fdfind /usr/local/bin/fd \
     && ln -sf /usr/bin/pip3 /usr/local/bin/pip \
+    && rm -rf /var/lib/apt/lists/*
+
+# ---------------------------------------------------------------------------
+# GitHub CLI (gh) via the official apt repository.
+#
+# gh reads GH_TOKEN from the environment (injected by Faultline via
+# [sandbox.env]); with network enabled the agent can use gh for API /
+# repo operations, and `gh auth setup-git` wires git HTTPS to the same
+# token via the credential helper under HOME=/cache/home.
+# ---------------------------------------------------------------------------
+RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
+      -o /usr/share/keyrings/githubcli-archive-keyring.gpg \
+    && chmod go+r /usr/share/keyrings/githubcli-archive-keyring.gpg \
+    && echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" \
+      > /etc/apt/sources.list.d/github-cli.list \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends gh \
+    && gh --version \
     && rm -rf /var/lib/apt/lists/*
 
 # ---------------------------------------------------------------------------

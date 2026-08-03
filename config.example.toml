@@ -138,9 +138,9 @@ dir = "./logs"
 # in ephemeral Docker containers (one container per operation). Requires
 # Docker in PATH.
 #
-# The default image is Faultline's own multi-runtime image (Arch-based;
+# The default image is Faultline's own multi-runtime image (Debian-based;
 # ships uv/uvx, python+pip, node+npm+npx, bun, deno, go, plus common CLI
-# tools like curl, jq, ripgrep, fd, git). sandbox_execute drives Python
+# tools like curl, jq, ripgrep, fd, git, gh). sandbox_execute drives Python
 # via uv; sandbox_shell can drive any of the other runtimes directly.
 # ---------------------------------------------------------------------------
 [sandbox]
@@ -161,11 +161,21 @@ dir = "./sandbox"
 timeout = "5m"
 
 # Whether containers can reach the network. Off by default for safety.
+# Must be true for gh/git remotes (and most MCP stdio servers that talk
+# to the internet).
 network = false
 
 # Memory limit passed to docker --memory.
 memory_limit = "512m"
 
+# Extra environment variables injected into every sandbox container
+# (sandbox_execute, sandbox_shell, skill_execute, MCP stdio). Values are
+# never written to debug logs. GH_TOKEN is the gh CLI's default auth env
+# var; with network = true the agent can run `gh ...` and, after
+# `gh auth setup-git`, use git HTTPS with the same token.
+#
+# [sandbox.env]
+# GH_TOKEN = "ghp_..."
 # ---------------------------------------------------------------------------
 # [email] — optional IMAP email reading.
 #
