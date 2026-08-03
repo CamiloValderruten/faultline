@@ -16,7 +16,7 @@ import (
 	"time"
 )
 
-// OAuthOptions configures OAuth callback and pending-session behaviour.
+// OAuthOptions configures OAuth callback and pending-session behavior.
 type OAuthOptions struct {
 	PublicBaseURL string
 	CallbackPath  string

@@ -4,7 +4,7 @@ This directory documents features that extend the agent's capabilities beyond th
 
 ## Conventions
 
-- **[HTML Publishing](html-publishing.md)** — Write markdown / HTML / SVG files to the sandbox `outputs/html/` directory; they're served at `arlo.camilovalderruten.com/html/<filename>`. Markdown auto-renders in the browser via [marked.js](https://marked.js.org/), Mermaid diagrams via [Mermaid](https://mermaid.js.org/), and charts via [Chart.js](https://www.chartjs.org/). Inline CSS, no build step, no bundler.
+- **[HTML Publishing](html-publishing.md)** — Write markdown / HTML / SVG files to the sandbox `output/html/` directory; they're served at `https://<agent-host>/html/<filename>` by the `[publish]` HTTP listener (typically fronted by a Cloudflare Tunnel). Markdown auto-renders via [marked.js](https://marked.js.org/). Full HTML pages can load Mermaid and Chart.js from the starter template. Inline CSS, no build step, no bundler.
 
 ## Layout
 
@@ -12,7 +12,7 @@ This directory documents features that extend the agent's capabilities beyond th
 docs/harness/
 ├── README.md              ← this file
 ├── html-publishing.md     ← HTML publishing convention
-└── html-template.html     ← starter scaffold (marked.js + Mermaid + Chart.js)
+└── html-template.html     ← starter scaffold for full HTML pages (marked.js + Mermaid + Chart.js)
 ```
 
 ## Adding a new harness feature

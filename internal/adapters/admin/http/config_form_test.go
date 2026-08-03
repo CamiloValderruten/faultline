@@ -17,7 +17,7 @@ func TestBuildConfigForm_CoversEverySection(t *testing.T) {
 	wantSections := []string{
 		"api", "agent", "telegram", "discord", "deepgram", "log", "sandbox", "email",
 		"limits", "update", "mcp", "oauth", "embeddings", "skills",
-		"subagent", "admin", "peers",
+		"subagent", "admin", "peers", "publish",
 	}
 	got := form.SectionPaths()
 	if !reflect.DeepEqual(got, wantSections) {
@@ -39,6 +39,7 @@ func TestBuildConfigForm_ClassifiesFieldsByType(t *testing.T) {
 		{"sandbox.enabled", KindBool},
 		{"update.enabled", KindBool},
 		{"admin.enabled", KindBool},
+		{"publish.enabled", KindBool},
 
 		// ints
 		{"agent.max_tokens", KindInt},
@@ -55,6 +56,10 @@ func TestBuildConfigForm_ClassifiesFieldsByType(t *testing.T) {
 		{"discord.channel_id", KindString},
 		{"deepgram.stt_model", KindString},
 		{"deepgram.tts_model", KindString},
+		{"publish.bind", KindString},
+		{"publish.root", KindString},
+		{"publish.public_base_url", KindString},
+		{"publish.md_template", KindString},
 
 		// secrets
 		{"api.key", KindSecret},

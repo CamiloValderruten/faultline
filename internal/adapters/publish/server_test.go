@@ -9,11 +9,6 @@ import (
 	"testing"
 )
 
-const testMarkdownTemplate = "<html><body>\n{{CONTENT}}\n</body></html>"
-
-// newTestServer returns a Server backed by a fresh temp directory
-// containing a small test markdown template. Tests use t.TempDir() so
-// the directory is cleaned up automatically.
 func newTestServer(t *testing.T) *Server {
 	t.Helper()
 	root := t.TempDir()
@@ -21,6 +16,7 @@ func newTestServer(t *testing.T) *Server {
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
+	t.Cleanup(func() { _ = s.Close() })
 	return s
 }
 
@@ -103,8 +99,36 @@ func TestServeMarkdownWrapped(t *testing.T) {
 	if strings.Contains(body, markdownPlaceholder) {
 		t.Errorf("placeholder not replaced: %q", body)
 	}
+	// JSON-encoded into the script: marked.parse("...")
+	if !strings.Contains(body, `marked.parse("# Hello")`) && !strings.Contains(body, `marked.parse("# Hello\n")`) {
+		// json.Marshal of "# Hello" is `"# Hello"`
+		if !strings.Contains(body, `marked.parse("# Hello"`) {
+			t.Errorf("expected JSON-encoded markdown in marked.parse(...): %q", body)
+		}
+	}
 	if got := rec.Header().Get("Content-Type"); !strings.HasPrefix(got, "text/html") {
 		t.Errorf("Content-Type = %q, want text/html", got)
+	}
+}
+
+func TestServeMarkdownScriptBreakoutSafe(t *testing.T) {
+	s := newTestServer(t)
+	// Raw substitution would close the script tag; JSON encoding must keep it inert.
+	evil := "</script><script>alert(1)</script>"
+	writeFile(t, filepath.Join(s.Root(), "evil.md"), evil)
+	rec := get(s, "/html/evil.md")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status: %d", rec.Code)
+	}
+	body := rec.Body.String()
+	if strings.Contains(body, "</script><script>alert(1)</script>") {
+		t.Errorf("raw script breakout present in body: %q", body)
+	}
+	if !strings.Contains(body, `\u003c/script\u003e`) && !strings.Contains(body, `<\/script>`) {
+		// encoding/json escapes < as \u003c
+		if !strings.Contains(body, `\u003c`) {
+			t.Errorf("expected JSON-escaped HTML in body: %q", body)
+		}
 	}
 }
 
@@ -120,23 +144,49 @@ func TestServeMarkdownUppercaseExt(t *testing.T) {
 	}
 }
 
-func TestPathTraversalBlocked(t *testing.T) {
+func TestPathTraversalForbidden(t *testing.T) {
 	s := newTestServer(t)
-	secretDir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(secretDir, "secret.txt"), []byte("TOP_SECRET"), 0o644); err != nil {
+	outside := t.TempDir()
+	if err := os.WriteFile(filepath.Join(outside, "secret.txt"), []byte("TOP_SECRET"), 0o644); err != nil {
 		t.Fatal(err)
 	}
+	// Percent-encoded forms reach the handler; bare ".." is often
+	// cleaned/redirected by ServeMux before PathValue is set.
 	cases := []string{
-		"/html/../" + filepath.Base(secretDir) + "/secret.txt",
-		"/html/%2e%2e/" + filepath.Base(secretDir) + "/secret.txt",
-		"/html/sub/../../" + filepath.Base(secretDir) + "/secret.txt",
-		"/html/..%2f" + filepath.Base(secretDir) + "/secret.txt",
+		"/html/%2e%2e/secret.txt",
+		"/html/%2e%2e%2fsecret.txt",
+		"/html/sub/%2e%2e/%2e%2e/secret.txt",
+		"/html/..%2fsecret.txt",
 	}
 	for _, p := range cases {
 		rec := get(s, p)
 		if strings.Contains(rec.Body.String(), "TOP_SECRET") {
-			t.Errorf("path %q escaped root (body: %q)", p, rec.Body.String())
+			t.Errorf("path %q leaked secret (status %d)", p, rec.Code)
 		}
+		if rec.Code != http.StatusForbidden && rec.Code != http.StatusNotFound {
+			t.Errorf("path %q status %d, want 403 or 404 (loc=%q body=%q)",
+				p, rec.Code, rec.Header().Get("Location"), rec.Body.String())
+		}
+	}
+}
+
+func TestSymlinkEscapeForbidden(t *testing.T) {
+	s := newTestServer(t)
+	outside := t.TempDir()
+	secret := filepath.Join(outside, "secret.txt")
+	if err := os.WriteFile(secret, []byte("TOP_SECRET"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(s.Root(), "leak")
+	if err := os.Symlink(secret, link); err != nil {
+		t.Fatalf("symlink: %v", err)
+	}
+	rec := get(s, "/html/leak")
+	if strings.Contains(rec.Body.String(), "TOP_SECRET") {
+		t.Fatalf("symlink escape served secret (status %d body %q)", rec.Code, rec.Body.String())
+	}
+	if rec.Code != http.StatusForbidden {
+		t.Errorf("status %d, want 403", rec.Code)
 	}
 }
 
@@ -145,8 +195,8 @@ func TestPathTraversalNULByte(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/html/x%00y", nil)
 	rec := httptest.NewRecorder()
 	s.Handler().ServeHTTP(rec, req)
-	if rec.Code == http.StatusOK && strings.Contains(rec.Body.String(), "secret") {
-		t.Errorf("NUL byte path returned 200 with body: %q", rec.Body.String())
+	if rec.Code == http.StatusOK {
+		t.Errorf("NUL byte path returned 200: %q", rec.Body.String())
 	}
 }
 
@@ -158,7 +208,7 @@ func TestNotFound(t *testing.T) {
 	}
 }
 
-func TestRootListingFallsBackToIndex(t *testing.T) {
+func TestRootServesIndex(t *testing.T) {
 	s := newTestServer(t)
 	writeFile(t, filepath.Join(s.Root(), "index.html"), "<h1>HOME</h1>")
 	rec := get(s, "/html/")
@@ -170,41 +220,82 @@ func TestRootListingFallsBackToIndex(t *testing.T) {
 	}
 }
 
-func TestRootListingWithoutIndex(t *testing.T) {
+func TestRootWithoutIndexIs404(t *testing.T) {
 	s := newTestServer(t)
 	writeFile(t, filepath.Join(s.Root(), "a.html"), "A")
-	writeFile(t, filepath.Join(s.Root(), "b.md"), "B")
 	rec := get(s, "/html/")
-	if rec.Code != http.StatusOK {
-		t.Fatalf("status: %d", rec.Code)
-	}
-	body := rec.Body.String()
-	if !strings.Contains(body, "a.html") || !strings.Contains(body, "b.md") {
-		t.Errorf("listing missing entries: %q", body)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("status: %d, want 404 (no directory listing)", rec.Code)
 	}
 }
 
-func TestSubdirectoryListing(t *testing.T) {
+func TestSubdirectoryWithoutIndexIs404(t *testing.T) {
 	s := newTestServer(t)
 	writeFile(t, filepath.Join(s.Root(), "sub", "page.html"), "page")
+	rec := get(s, "/html/sub/")
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("status: %d, want 404", rec.Code)
+	}
+}
+
+func TestSubdirectoryWithIndex(t *testing.T) {
+	s := newTestServer(t)
+	writeFile(t, filepath.Join(s.Root(), "sub", "index.html"), "<h1>SUB</h1>")
 	rec := get(s, "/html/sub/")
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status: %d", rec.Code)
 	}
-	if !strings.Contains(rec.Body.String(), "page.html") {
-		t.Errorf("subdir listing missing entries: %q", rec.Body.String())
+	if !strings.Contains(rec.Body.String(), "<h1>SUB</h1>") {
+		t.Errorf("subdir index not served: %q", rec.Body.String())
+	}
+}
+
+func TestNestedAsset(t *testing.T) {
+	s := newTestServer(t)
+	writeFile(t, filepath.Join(s.Root(), "assets", "logo.png"), "PNGDATA")
+	rec := get(s, "/html/assets/logo.png")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status: %d", rec.Code)
+	}
+	if rec.Body.String() != "PNGDATA" {
+		t.Errorf("body = %q", rec.Body.String())
 	}
 }
 
 func TestSubdirectoryRedirect(t *testing.T) {
 	s := newTestServer(t)
-	writeFile(t, filepath.Join(s.Root(), "sub", "page.html"), "page")
+	if err := os.MkdirAll(filepath.Join(s.Root(), "sub"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, filepath.Join(s.Root(), "sub", "index.html"), "page")
 	rec := get(s, "/html/sub")
 	if rec.Code != http.StatusMovedPermanently {
 		t.Errorf("status: %d, want 301", rec.Code)
 	}
 	if loc := rec.Header().Get("Location"); loc != "/html/sub/" {
 		t.Errorf("Location = %q, want /html/sub/", loc)
+	}
+}
+
+func TestCustomTemplate(t *testing.T) {
+	root := t.TempDir()
+	tmplPath := filepath.Join(t.TempDir(), "tmpl.html")
+	if err := os.WriteFile(tmplPath, []byte("<html><body><pre>{{CONTENT}}</pre></body></html>"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	s, err := New(root, tmplPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = s.Close() })
+	writeFile(t, filepath.Join(root, "n.md"), "hi")
+	rec := get(s, "/html/n.md")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status: %d", rec.Code)
+	}
+	// Custom template still gets JSON-encoded content.
+	if !strings.Contains(rec.Body.String(), `"hi"`) {
+		t.Errorf("expected JSON-encoded content: %q", rec.Body.String())
 	}
 }
 
@@ -241,8 +332,7 @@ func TestNewErrors(t *testing.T) {
 	})
 	t.Run("template without placeholder", func(t *testing.T) {
 		root := t.TempDir()
-		tmplDir := t.TempDir()
-		tmplPath := filepath.Join(tmplDir, "tmpl.html")
+		tmplPath := filepath.Join(t.TempDir(), "tmpl.html")
 		if err := os.WriteFile(tmplPath, []byte("<html>no placeholder here</html>"), 0o644); err != nil {
 			t.Fatal(err)
 		}

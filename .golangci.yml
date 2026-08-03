@@ -25,6 +25,9 @@ linters:
       comparison: true
     misspell:
       locale: US
+      # Wire/API spellings retained for on-disk schedule status compatibility.
+      ignore-rules:
+        - cancelled
 
   exclusions:
     # Be lenient with how generated/vendored files are detected so we don't

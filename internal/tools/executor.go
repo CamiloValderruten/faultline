@@ -3287,7 +3287,7 @@ func (te *Executor) cancelScheduledTask(argsJSON string) string {
 	if err := te.scheduler.Cancel(args.TaskID); err != nil {
 		return fmt.Sprintf("Error: %s", err)
 	}
-	return fmt.Sprintf("Cancelled scheduled task %s.", args.TaskID)
+	return fmt.Sprintf("Canceled scheduled task %s.", args.TaskID)
 }
 
 // getVersion returns the running binary's version metadata.

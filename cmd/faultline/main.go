@@ -432,6 +432,14 @@ func main() {
 	}
 	oauthSrv.Start(ctx)
 
+	publishSrv, err := buildPublish(cfg.Publish, cfg.Sandbox.Dir, logger)
+	if err != nil {
+		logger.Error("publish server failed to configure", "error", err)
+		os.Exit(1)
+	}
+	publishSrv.Start(ctx)
+	defer publishSrv.Close()
+
 	peerMailbox, peerSrv, err := buildPeerMailbox(cfg.Peers, logger)
 	if err != nil {
 		logger.Error("peer messaging failed to configure", "error", err)
@@ -590,6 +598,7 @@ func main() {
 		// Best-effort admin shutdown before exit.
 		forceCancel()
 		oauthSrv.Wait()
+		publishSrv.Wait()
 		peerSrv.Wait()
 		adminSrv.Wait()
 		adminSrv.Close()
@@ -602,6 +611,7 @@ func main() {
 	// returned; nothing else useful runs through the admin UI now.
 	forceCancel()
 	oauthSrv.Wait()
+	publishSrv.Wait()
 	peerSrv.Wait()
 	adminSrv.Wait()
 	adminSrv.Close()
