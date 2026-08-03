@@ -10,6 +10,9 @@ services:
       - TZ=America/New_York
     group_add:
       - "${DOCKER_GID:-986}"
+    ports:
+      # HTML publishing harness — Cloudflare Tunnel via host.docker.internal
+      - "8751:8751"
     volumes:
       - /home/camilovalderruten/faultline/coco.config.toml:/config/config.toml:ro
       - /home/camilovalderruten/.faultline/agents/coco:/agent:rw
@@ -29,6 +32,9 @@ services:
       - TZ=America/New_York
     group_add:
       - "${DOCKER_GID:-986}"
+    ports:
+      # HTML publishing harness — Cloudflare Tunnel via host.docker.internal
+      - "8750:8750"
     volumes:
       - /home/camilovalderruten/faultline/arlo.config.toml:/config/config.toml:ro
       - /home/camilovalderruten/.faultline/agents/arlo:/agent:rw
