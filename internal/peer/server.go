@@ -45,7 +45,7 @@ func NewServer(bind, token string, inbox *Inbox, logger *slog.Logger) (*Server, 
 	return &Server{bind: bind, token: token, inbox: inbox, logger: logger}, nil
 }
 
-// Start listens until ctx is cancelled.
+// Start listens until ctx is canceled.
 func (s *Server) Start(ctx context.Context) {
 	if s == nil {
 		return

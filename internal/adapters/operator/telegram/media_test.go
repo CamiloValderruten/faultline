@@ -44,7 +44,7 @@ func TestFormatPhotoNotice(t *testing.T) {
 func TestSafeFileStem(t *testing.T) {
 	got := safeFileStem("AbC/../x Y!")
 	for _, r := range got {
-		if !(r >= 'a' && r <= 'z') && !(r >= '0' && r <= '9') && r != '-' && r != '_' {
+		if (r < 'a' || r > 'z') && (r < '0' || r > '9') && r != '-' && r != '_' {
 			t.Fatalf("unsafe stem %q", got)
 		}
 	}

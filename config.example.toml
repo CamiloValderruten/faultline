@@ -545,3 +545,38 @@ skills_file = "./skills.toml"
 # Idle session TTL. Sessions older than this with no activity are
 # evicted from the in-memory store, requiring a fresh login.
 session_ttl = "12h"
+
+# ---------------------------------------------------------------------------
+# [publish] — HTML publishing harness (public read-only /html/ server).
+#
+# Serves files from <sandbox.dir>/output/html at /html/{path...}. The agent
+# writes pages via sandbox tools to /output/html/...; this listener makes
+# them reachable on a public hostname through a reverse proxy or tunnel.
+#
+# Multi-agent pattern (Arlo / Coco on one host): give each process its own
+# bind port and point a Cloudflare Tunnel hostname at that port, e.g.
+#   arlo → 127.0.0.1:8744
+#   coco → 127.0.0.1:8745
+# public_base_url is log-only (helps operators confirm which hostname maps
+# here); it does not rewrite responses.
+#
+# Separate from [admin] on purpose: published pages are unauthenticated
+# first-party content and must not share the authenticated admin mux.
+# See docs/harness/html-publishing.md.
+# ---------------------------------------------------------------------------
+[publish]
+enabled = false
+bind = "127.0.0.1:8744"
+
+# Directory served at /html/. Empty = <sandbox.dir>/output/html (created
+# automatically when the server starts).
+# root = ""
+
+# Optional public origin for log lines only.
+# public_base_url = "https://arlo.camilovalderruten.com"
+
+# Optional custom .md wrapper HTML. Must contain {{CONTENT}}, which is
+# replaced with a JSON-encoded markdown string (safe JS expression).
+# Empty uses the built-in marked.js wrapper.
+# md_template = ""
+

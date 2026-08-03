@@ -70,6 +70,9 @@ faultline/
       admin/http/             embedded HTTP admin UI (HTMX + DaisyUI),
                               login/logout/dashboard skeleton; static assets
                               and html/template files embedded via go:embed
+      publish/                public read-only /html/ file server for the
+                              HTML publishing harness (sandbox output/html;
+                              separate loopback bind from [admin])
 ```
 
 The `internal/` prefix is enforced by Go: nothing outside this module can import these packages. That's a feature.

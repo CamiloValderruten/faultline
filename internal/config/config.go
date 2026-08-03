@@ -60,6 +60,14 @@ type Config struct {
 	// can send to configured peers via peer_* tools. Messages are
 	// never auto-injected into the agent loop.
 	Peers PeersConfig `toml:"peers"`
+
+	// Publish is optional; when Enabled, a public read-only HTTP
+	// server serves sandbox output/html/ at /html/{path...}. Each
+	// agent binds its own loopback port; Cloudflare Tunnel (or any
+	// reverse proxy) routes the agent's public hostname to that
+	// bind. Separate from [admin] so the public origin never shares
+	// an authenticated mux.
+	Publish PublishConfig `toml:"publish"`
 }
 
 // APIConfig holds LLM API connection settings.
@@ -160,12 +168,12 @@ type LogConfig struct {
 
 // SandboxConfig holds Python sandbox execution settings.
 type SandboxConfig struct {
-	Enabled     bool              `toml:"enabled"`
-	Image       string            `toml:"image"`
-	Dir         string            `toml:"dir"`
-	Timeout     duration          `toml:"timeout"`
-	Network     bool              `toml:"network"`
-	MemoryLimit string            `toml:"memory_limit"`
+	Enabled     bool     `toml:"enabled"`
+	Image       string   `toml:"image"`
+	Dir         string   `toml:"dir"`
+	Timeout     duration `toml:"timeout"`
+	Network     bool     `toml:"network"`
+	MemoryLimit string   `toml:"memory_limit"`
 	// Env is injected as docker -e flags into every sandbox container
 	// (sandbox_execute, sandbox_shell, skill_execute, MCP stdio). Use
 	// GH_TOKEN so the in-container gh CLI (and git via `gh auth setup-git`)
@@ -516,6 +524,45 @@ func (a AdminConfig) Active() bool {
 	return a.Enabled && a.Bind != ""
 }
 
+// PublishConfig holds settings for the HTML publishing harness HTTP
+// server. When Enabled, Faultline serves files from Root (default:
+// <sandbox.dir>/output/html) at /html/{path...} on Bind.
+//
+// Typical deployment: each agent (Arlo, Coco, …) enables publish on a
+// distinct loopback port; a Cloudflare Tunnel maps
+// <agent>.example.com → that port. Published pages are first-party
+// agent-authored content — treat Root like a public S3 bucket.
+type PublishConfig struct {
+	// Enabled toggles the publish listener. Off by default.
+	Enabled bool `toml:"enabled"`
+
+	// Bind is the loopback address:port to listen on. Default
+	// "127.0.0.1:8744". Give each agent its own port when multiple
+	// Faultline processes share a host.
+	Bind string `toml:"bind"`
+
+	// Root is the directory served at /html/. Empty means
+	// <sandbox.dir>/output/html (created at startup if missing).
+	Root string `toml:"root"`
+
+	// PublicBaseURL is an optional public origin used only in logs
+	// (e.g. "https://arlo.camilovalderruten.com"). The server does
+	// not redirect or rewrite based on this value.
+	PublicBaseURL string `toml:"public_base_url"`
+
+	// MDTemplate is an optional path to an HTML wrapper for .md
+	// files. Empty uses the built-in marked.js wrapper. The file
+	// must contain a {{CONTENT}} placeholder; at serve time it is
+	// replaced with a JSON-encoded markdown string suitable as a
+	// JavaScript expression.
+	MDTemplate string `toml:"md_template"`
+}
+
+// Active reports whether the publish server should be wired up.
+func (p PublishConfig) Active() bool {
+	return p.Enabled && p.Bind != ""
+}
+
 // Peer delivery modes for [peers].delivery.
 const (
 	PeersDeliveryPull   = "pull"
@@ -696,6 +743,10 @@ func Default() *Config {
 			MaxInbox:  100,
 			Delivery:  PeersDeliveryPull,
 		},
+		Publish: PublishConfig{
+			Enabled: false,
+			Bind:    "127.0.0.1:8744",
+		},
 	}
 }
 
@@ -796,6 +847,10 @@ func Load(path string) (*Config, error) {
 
 	if cfg.Peers.Listen == "" {
 		cfg.Peers.Listen = "127.0.0.1:9101"
+	}
+
+	if cfg.Publish.Bind == "" {
+		cfg.Publish.Bind = "127.0.0.1:8744"
 	}
 	if cfg.Peers.InboxFile == "" {
 		cfg.Peers.InboxFile = "./peer-inbox.json"

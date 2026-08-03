@@ -56,7 +56,7 @@ var tier1Tools = map[string]struct{}{
 }
 
 const (
-	toolSearchRRFK          = 60
+	toolSearchRRFK           = 60
 	toolSearchSemanticWeight = 0.7
 	toolSearchKeywordWeight  = 0.3
 	toolSearchExactNameBoost = 1.5
@@ -525,8 +525,6 @@ func fuseToolSearchRanks(bm25Paths, vectorPaths []string, max int, exactName str
 	if exactName != "" {
 		if s, ok := scores[exactName]; ok {
 			scores[exactName] = s * toolSearchExactNameBoost
-		} else if len(bm25Paths) > 0 || len(vectorPaths) > 0 {
-			// Name known to caller via force-include path; leave absent here.
 		}
 	}
 

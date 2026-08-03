@@ -92,7 +92,7 @@ func TestStoreCancelPreventsDelivery(t *testing.T) {
 
 	task, err := store.Schedule(CreateRequest{
 		Kind:   KindOnce,
-		Title:  "Cancelled",
+		Title:  "Canceled",
 		Prompt: "Do not run.",
 		RunAt:  runAt,
 	})
