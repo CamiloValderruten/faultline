@@ -61,6 +61,7 @@ var sandboxFolders = map[string]bool{
 	"scripts": true,
 	"input":   true,
 	"output":  true,
+	"html":    true, // alias → output/html (publish root)
 }
 
 // filenamePattern validates flat, lowercase filenames.
@@ -231,9 +232,18 @@ source = { virtual = "." }
 // validateFolder checks that the folder name is valid.
 func (s *Sandbox) validateFolder(folder string) error {
 	if !sandboxFolders[folder] {
-		return fmt.Errorf("invalid folder %q: must be one of scripts, input, output", folder)
+		return fmt.Errorf("invalid folder %q: must be one of scripts, input, output, html", folder)
 	}
 	return nil
+}
+
+// folderDir returns the absolute host directory for a sandbox folder.
+// "html" is an alias for output/html (the [publish] serve root).
+func (s *Sandbox) folderDir(folder string) string {
+	if folder == "html" {
+		return filepath.Join(s.dir, "output", "html")
+	}
+	return filepath.Join(s.dir, folder)
 }
 
 // validateFilename checks that a filename is flat, lowercase, and safe.
@@ -262,7 +272,7 @@ func (s *Sandbox) resolvePath(folder, name string) (string, error) {
 	if err := s.validateFilename(name); err != nil {
 		return "", err
 	}
-	return filepath.Join(s.dir, folder, name), nil
+	return filepath.Join(s.folderDir(folder), name), nil
 }
 
 // FileInfo holds metadata about a sandbox file.
@@ -277,6 +287,9 @@ func (s *Sandbox) WriteFile(folder, name, content string) error {
 	path, err := s.resolvePath(folder, name)
 	if err != nil {
 		return err
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+		return fmt.Errorf("create folder: %w", err)
 	}
 	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
 		return fmt.Errorf("write file: %w", err)
@@ -508,7 +521,7 @@ func (s *Sandbox) ListFiles(folder string) ([]FileInfo, error) {
 		return nil, err
 	}
 
-	entries, err := os.ReadDir(filepath.Join(s.dir, folder))
+	entries, err := os.ReadDir(s.folderDir(folder))
 	if err != nil {
 		return nil, fmt.Errorf("list %s: %w", folder, err)
 	}

@@ -35,8 +35,8 @@ Stay in Discord (no page) when a few sentences or a small table is enough.
 | | Arlo | Coco |
 |---|---|---|
 | Public origin | `https://arlo.camilovalderruten.com` | `https://coco.camilovalderruten.com` |
-| Write path (sandbox) | `/output/html/…` | `/output/html/…` |
-| URL | `https://<origin>/html/<relative-path>` | same |
+| Write (sandbox_write) | `folder: "html"` → `/output/html/…` | same |
+| URL | `https://<origin>/html/<filename>` | same |
 
 Prefer `public_base_url` from config / identity if known; otherwise use the table for **this** agent — never the other agent's host.
 
@@ -46,8 +46,8 @@ Harness docs (human): repo `docs/harness/html-publishing.md`. Bundled pointer: `
 
 | Need | Format | How |
 |------|--------|-----|
-| Prose, letters, simple structure (~60%) | `.md` | Write markdown to `/output/html/<slug>.md` — server wraps with marked.js |
-| Charts, custom layout, interactivity (~30%) | `.html` | Start from `assets/template.html`; Chart.js + Mermaid already loaded |
+| Prose, letters, simple structure (~60%) | `.md` | `sandbox_write` with `folder: "html"`, filename `<slug>.md` — server wraps with marked.js |
+| Charts, custom layout, interactivity (~30%) | `.html` | Start from `assets/template.html`; Chart.js + Mermaid already loaded; write with `folder: "html"` |
 | Diagram-only (~10%) | Mermaid in md/html, or `.svg` | Fenced `mermaid` in template markdown, or raw SVG |
 
 Naming: lowercase, dash-separated, short. Examples: `luca-weight-2026-08.html`, `money-report-july.md`.
@@ -55,7 +55,10 @@ Naming: lowercase, dash-separated, short. Examples: `luca-weight-2026-08.html`, 
 ## Workflow
 
 1. **Decide slug + format** (artifact vs living page).
-2. **Write the file** with sandbox tools to `/output/html/<slug>.{md,html}` (and `/output/html/assets/…` if needed).
+2. **Write the file** with `sandbox_write`:
+   - `folder`: **`"html"`** (not `"output"` — `output` is not published)
+   - `filename`: `<slug>.{md,html}` (flat; no path separators)
+   - Nested assets under `/output/html/assets/` need `sandbox_shell` (mkdir + write); flat pages do not.
 3. **Build the public URL:** `{public_base_url}/html/<slug>.{md,html}`.
 4. **Deliver to the collaborator** with a link button (do not paste the whole page into Discord):
 
@@ -104,7 +107,7 @@ When token gating lands, append the token to the link-button URL and keep the sa
 
 ## Quick checklist
 
-- [ ] Wrote under `/output/html/`
+- [ ] Wrote with `sandbox_write` `folder: "html"` (not `"output"`)
 - [ ] URL uses **this** agent's host
 - [ ] Sent Discord link button (or plain URL fallback)
 - [ ] No keys/tokens/camera URLs/prompts in the page

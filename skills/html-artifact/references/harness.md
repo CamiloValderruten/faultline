@@ -10,10 +10,15 @@ Canonical human docs live in the Faultline repo:
 
 | Layer | Path |
 |-------|------|
-| Sandbox write | `/output/html/<file>` |
+| Prefer | `sandbox_write` with `folder: "html"`, flat `filename` |
+| Sandbox path | `/output/html/<file>` |
 | Host (typical) | `<sandbox.dir>/output/html/<file>` |
 | HTTP | `GET /html/<file>` on the `[publish]` listener |
 | Public | `{public_base_url}/html/<file>` |
+
+Do **not** use `folder: "output"` for publishable pages — that writes `/output/<file>`, which is **not** served.
+
+Nested `assets/` still need `sandbox_shell` (flat `sandbox_*` tools only).
 
 ## Formats
 

@@ -951,14 +951,14 @@ func (te *Executor) buildAllToolDefs() []llm.Tool {
 				Type: llm.ToolTypeFunction,
 				Function: &llm.FunctionDef{
 					Name:        "sandbox_write",
-					Description: "Create or overwrite a file in the sandbox. Writes the full file content. Use folder 'scripts' for Python scripts, 'input' for input data, 'output' for output data. All filenames must be lowercase, flat (no subfolders), and contain only [a-z0-9._-].",
+					Description: "Create or overwrite a file in the sandbox. Writes the full file content. Use folder 'scripts' for Python scripts, 'input' for input data, 'output' for output data, 'html' for published pages (served at /html/<filename>). All filenames must be lowercase, flat (no subfolders), and contain only [a-z0-9._-].",
 					Parameters: map[string]interface{}{
 						"type": "object",
 						"properties": map[string]interface{}{
 							"folder": map[string]interface{}{
 								"type":        "string",
-								"enum":        []string{"scripts", "input", "output"},
-								"description": "Target folder: 'scripts', 'input', or 'output'.",
+								"enum":        []string{"scripts", "input", "output", "html"},
+								"description": "Target folder: 'scripts', 'input', 'output', or 'html' (publish root).",
 							},
 							"filename": map[string]interface{}{
 								"type":        "string",
@@ -977,14 +977,14 @@ func (te *Executor) buildAllToolDefs() []llm.Tool {
 				Type: llm.ToolTypeFunction,
 				Function: &llm.FunctionDef{
 					Name:        "sandbox_read",
-					Description: "Read a file from the sandbox. Returns the file content with line numbers. Use folder 'scripts' for Python scripts, 'input' for input data, 'output' for output data. All filenames must be lowercase.",
+					Description: "Read a file from the sandbox. Returns the file content with line numbers. Use folder 'scripts' for Python scripts, 'input' for input data, 'output' for output data, 'html' for published pages. All filenames must be lowercase.",
 					Parameters: map[string]interface{}{
 						"type": "object",
 						"properties": map[string]interface{}{
 							"folder": map[string]interface{}{
 								"type":        "string",
-								"enum":        []string{"scripts", "input", "output"},
-								"description": "Source folder: 'scripts', 'input', or 'output'.",
+								"enum":        []string{"scripts", "input", "output", "html"},
+								"description": "Source folder: 'scripts', 'input', 'output', or 'html'.",
 							},
 							"filename": map[string]interface{}{
 								"type":        "string",
@@ -1013,8 +1013,8 @@ func (te *Executor) buildAllToolDefs() []llm.Tool {
 						"properties": map[string]interface{}{
 							"folder": map[string]interface{}{
 								"type":        "string",
-								"enum":        []string{"scripts", "input", "output"},
-								"description": "Folder containing the file: 'scripts', 'input', or 'output'.",
+								"enum":        []string{"scripts", "input", "output", "html"},
+								"description": "Folder containing the file: 'scripts', 'input', 'output', or 'html'.",
 							},
 							"filename": map[string]interface{}{
 								"type":        "string",
@@ -1035,8 +1035,8 @@ func (te *Executor) buildAllToolDefs() []llm.Tool {
 						"properties": map[string]interface{}{
 							"folder": map[string]interface{}{
 								"type":        "string",
-								"enum":        []string{"scripts", "input", "output"},
-								"description": "Folder containing the file: 'scripts', 'input', or 'output'.",
+								"enum":        []string{"scripts", "input", "output", "html"},
+								"description": "Folder containing the file: 'scripts', 'input', 'output', or 'html'.",
 							},
 							"old_name": map[string]interface{}{
 								"type":        "string",
@@ -1061,8 +1061,8 @@ func (te *Executor) buildAllToolDefs() []llm.Tool {
 						"properties": map[string]interface{}{
 							"folder": map[string]interface{}{
 								"type":        "string",
-								"enum":        []string{"scripts", "input", "output"},
-								"description": "Folder to list: 'scripts', 'input', or 'output'.",
+								"enum":        []string{"scripts", "input", "output", "html"},
+								"description": "Folder to list: 'scripts', 'input', 'output', or 'html'.",
 							},
 						},
 						"required": []string{"folder"},
@@ -1079,8 +1079,8 @@ func (te *Executor) buildAllToolDefs() []llm.Tool {
 						"properties": map[string]interface{}{
 							"folder": map[string]interface{}{
 								"type":        "string",
-								"enum":        []string{"scripts", "input", "output"},
-								"description": "Folder containing the file: 'scripts', 'input', or 'output'.",
+								"enum":        []string{"scripts", "input", "output", "html"},
+								"description": "Folder containing the file: 'scripts', 'input', 'output', or 'html'.",
 							},
 							"filename": map[string]interface{}{
 								"type":        "string",
@@ -1113,8 +1113,8 @@ func (te *Executor) buildAllToolDefs() []llm.Tool {
 						"properties": map[string]interface{}{
 							"folder": map[string]interface{}{
 								"type":        "string",
-								"enum":        []string{"scripts", "input", "output"},
-								"description": "Target folder: 'scripts', 'input', or 'output'.",
+								"enum":        []string{"scripts", "input", "output", "html"},
+								"description": "Target folder: 'scripts', 'input', 'output', or 'html' (publish root).",
 							},
 							"filename": map[string]interface{}{
 								"type":        "string",
@@ -1139,8 +1139,8 @@ func (te *Executor) buildAllToolDefs() []llm.Tool {
 						"properties": map[string]interface{}{
 							"folder": map[string]interface{}{
 								"type":        "string",
-								"enum":        []string{"scripts", "input", "output"},
-								"description": "Folder containing the file: 'scripts', 'input', or 'output'.",
+								"enum":        []string{"scripts", "input", "output", "html"},
+								"description": "Folder containing the file: 'scripts', 'input', 'output', or 'html'.",
 							},
 							"filename": map[string]interface{}{
 								"type":        "string",

@@ -49,14 +49,16 @@ Point the Cloudflare Tunnel ingress for that hostname at the same `bind`. Keep `
 
 ### Option A — Markdown file (most common, ~60%)
 
-1. From a sandbox script (or `sandbox_shell`), write markdown to `/output/html/letter-day-1.md`.
+1. Prefer `sandbox_write` with `folder: "html"` and filename `letter-day-1.md` (maps to `/output/html/…`). Scripts / `sandbox_shell` can also write that path directly.
 2. Visit `https://<agent-host>/html/letter-day-1.md` — the publish server wraps it in a minimal HTML page that loads marked.js and renders the source client-side.
+
+Do **not** use `folder: "output"` for publishable pages — that lands outside the publish root and 404s at `/html/…`.
 
 No need to copy the HTML template for plain `.md` files.
 
 ### Option B — Full HTML page (interactive, ~30%)
 
-For dashboards, Chart.js, or Mermaid-heavy pages, copy [`html-template.html`](html-template.html) to `/output/html/letter-day-1.html` and replace the content block. The template loads marked.js, Mermaid, and Chart.js from jsDelivr.
+For dashboards, Chart.js, or Mermaid-heavy pages, copy [`html-template.html`](html-template.html) into the publish root (`sandbox_write` `folder: "html"`, or `/output/html/letter-day-1.html` via shell) and replace the content block. The template loads marked.js, Mermaid, and Chart.js from jsDelivr.
 
 ```html
 <div id="content">
