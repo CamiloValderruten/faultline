@@ -31,6 +31,7 @@ type Sandbox struct {
 	timeout     time.Duration
 	network     bool   // allow network access during script execution
 	memoryLimit string // docker --memory value
+	env         map[string]string
 	logger      *slog.Logger
 	execLog     *log.Daily // execution log in the logs directory
 	uid         int        // host uid for --user flag
@@ -126,6 +127,7 @@ func New(cfg config.SandboxConfig, workDir, logDir string, logger *slog.Logger) 
 		timeout:     cfg.Timeout.Duration(),
 		network:     cfg.Network,
 		memoryLimit: cfg.MemoryLimit,
+		env:         copyEnv(cfg.Env),
 		logger:      logger,
 		execLog:     execLog,
 		uid:         os.Getuid(),
@@ -540,6 +542,52 @@ func randomID() string {
 	return hex.EncodeToString(b)
 }
 
+// copyEnv returns a shallow copy of m (nil-safe).
+func copyEnv(m map[string]string) map[string]string {
+	if len(m) == 0 {
+		return nil
+	}
+	out := make(map[string]string, len(m))
+	for k, v := range m {
+		out[k] = v
+	}
+	return out
+}
+
+// appendEnvFlags appends sorted -e KEY=VALUE pairs. Sorted for stable
+// docker arg order in tests and logs.
+func appendEnvFlags(args []string, env map[string]string) []string {
+	if len(env) == 0 {
+		return args
+	}
+	keys := make([]string, 0, len(env))
+	for k := range env {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	for _, k := range keys {
+		args = append(args, "-e", k+"="+env[k])
+	}
+	return args
+}
+
+// redactDockerArgs returns a copy of args with -e values masked so
+// secrets (GH_TOKEN, etc.) never land in debug logs.
+func redactDockerArgs(args []string) []string {
+	out := make([]string, len(args))
+	copy(out, args)
+	for i := 0; i < len(out)-1; i++ {
+		if out[i] != "-e" {
+			continue
+		}
+		key, _, ok := strings.Cut(out[i+1], "=")
+		if ok {
+			out[i+1] = key + "=***"
+		}
+	}
+	return out
+}
+
 // dockerArgs builds the common docker run arguments (mounts, limits, user, etc).
 // needsNetwork overrides the config to allow network access (for package operations).
 // containerName is used for cleanup on timeout.
@@ -567,6 +615,9 @@ func (s *Sandbox) dockerArgs(needsNetwork bool, containerName string) []string {
 		"-e", "UV_LINK_MODE=copy",
 		"-e", "UV_PROJECT_ENVIRONMENT=/venv",
 		"-e", "PATH=/node/node_modules/.bin:/usr/local/bin:/usr/bin:/bin",
+	}
+	args = appendEnvFlags(args, s.env)
+	args = append(args,
 		// Working directory
 		"-w", "/",
 		// Resource limits
@@ -578,7 +629,7 @@ func (s *Sandbox) dockerArgs(needsNetwork bool, containerName string) []string {
 		// past whatever --user grants. With --user <unprivileged>
 		// this kills the most obvious in-container escalation path.
 		"--security-opt", "no-new-privileges",
-	}
+	)
 
 	if !needsNetwork && !s.network {
 		args = append(args, "--network=none")
@@ -598,7 +649,7 @@ func (s *Sandbox) dockerRun(ctx context.Context, needsNetwork bool, command ...s
 	ctx, cancel := context.WithTimeout(ctx, s.timeout)
 	defer cancel()
 
-	s.logger.Debug("docker run", "container", containerName, "args", args)
+	s.logger.Debug("docker run", "container", containerName, "args", redactDockerArgs(args))
 	cmd := exec.CommandContext(ctx, "docker", args...)
 
 	output, err := cmd.CombinedOutput()
@@ -741,14 +792,8 @@ func (s *Sandbox) mcpStdioArgs(containerName, cwd string, env map[string]string,
 		"-e", "UV_PROJECT_ENVIRONMENT=/venv",
 		"-e", "PATH=/node/node_modules/.bin:/usr/local/bin:/usr/bin:/bin",
 	}
-	keys := make([]string, 0, len(env))
-	for key := range env {
-		keys = append(keys, key)
-	}
-	sort.Strings(keys)
-	for _, key := range keys {
-		args = append(args, "-e", key+"="+env[key])
-	}
+	args = appendEnvFlags(args, s.env)
+	args = appendEnvFlags(args, env)
 	if !s.network {
 		args = append(args, "--network=none")
 	}
@@ -824,9 +869,9 @@ func (s *Sandbox) ExecuteIsolated(ctx context.Context, command string, mounts []
 		}
 		args = append(args, "-v", spec)
 	}
-	for k, v := range env {
-		args = append(args, "-e", k+"="+v)
-	}
+	// Sandbox-wide env first; per-call env overrides (e.g. UV_PROJECT_ENVIRONMENT).
+	args = appendEnvFlags(args, s.env)
+	args = appendEnvFlags(args, env)
 	if !network {
 		args = append(args, "--network=none")
 	}
