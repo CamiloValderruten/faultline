@@ -401,6 +401,12 @@ func (a *Agent) Run(ctx context.Context, shutdownCh <-chan struct{}) error {
 	// Zero MaxTurns (the primary case) disables the check.
 	turn := 0
 
+	// collaboratorReplyOwed is set when a drained batch of human
+	// collaborator messages is injected, and cleared only after a
+	// successful send_message / send_rich_message / send_voice_message.
+	// Text-only assistant content is never delivered to Discord/Telegram.
+	collaboratorReplyOwed := false
+
 	for {
 		// Subagents: caller signaled the loop should stop after
 		// delivering the report. Check before any other work so we
@@ -434,13 +440,16 @@ func (a *Agent) Run(ctx context.Context, shutdownCh <-chan struct{}) error {
 		default:
 		}
 
-		// Inject any collaborator messages that arrived between turns.
-		// If any were injected, the model has new input to respond to and
-		// is no longer idling.
-		var injected bool
-		messages, injected = a.injectPendingMessages(messages)
+		// Inject any collaborator / subagent / scheduled / peer messages
+		// that arrived between turns. Collaborator batches open a
+		// delivery debt cleared only by a successful outbound send_*.
+		var injected, collaboratorInjected bool
+		messages, injected, collaboratorInjected = a.injectPendingMessages(messages)
 		if injected {
 			idleStreak = 0
+		}
+		if collaboratorInjected {
+			collaboratorReplyOwed = true
 		}
 
 		// Check if compaction is needed
@@ -629,6 +638,7 @@ func (a *Agent) Run(ctx context.Context, shutdownCh <-chan struct{}) error {
 			}
 			if len(pendingOp) > 0 {
 				messages = a.appendCollaboratorMessages(messages, pendingOp)
+				collaboratorReplyOwed = true
 			}
 			// Tool calls + new input both count as the model engaging.
 			idleStreak = 0
@@ -639,12 +649,7 @@ func (a *Agent) Run(ctx context.Context, shutdownCh <-chan struct{}) error {
 			// yield to a pending shutdown without waiting for ctx
 			// cancellation (which only happens on the second SIGINT).
 			a.setPhase(PhaseExecutingTool)
-			a.tools.SetContextInfo(a.countMessageTokens(messages))
-			for _, tc := range msg.ToolCalls {
-				result := a.tools.Execute(toolCtx, tc)
-				messages = append(messages, toolMessage(tc.ID, result))
-				a.recordToolCall()
-			}
+			messages = a.executeToolCalls(toolCtx, messages, msg.ToolCalls, &collaboratorReplyOwed)
 			a.setPhase(PhaseIdle)
 			idleStreak = 0
 
@@ -654,8 +659,20 @@ func (a *Agent) Run(ctx context.Context, shutdownCh <-chan struct{}) error {
 			// the new input naturally. Resets the idle counter.
 			if len(pendingOp) > 0 {
 				messages = a.appendCollaboratorMessages(messages, pendingOp)
+				collaboratorReplyOwed = true
 			}
 			idleStreak = 0
+
+		case collaboratorReplyOwed:
+			// Text-only reply while a drained collaborator batch still
+			// needs an outbound send_*. Assistant content never reaches
+			// Discord/Telegram — force a delivery tool call.
+			idleStreak = 0
+			a.logger.Warn("collaborator delivery debt outstanding; injecting delivery nudge")
+			messages = append(messages, llm.Message{
+				Role:    llm.RoleUser,
+				Content: fmt.Sprintf(collaboratorDeliveryDebtPrompt, time.Now().Format(time.RFC1123)),
+			})
 
 		default:
 			// Text-only response, nothing to inject. This is the path that
@@ -830,12 +847,10 @@ func (a *Agent) compactContext(ctx context.Context, toolCtx context.Context, mes
 		a.logBackendPerf()
 
 		if len(msg.ToolCalls) > 0 {
-			a.tools.SetContextInfo(a.countMessageTokens(messages))
-
-			for _, tc := range msg.ToolCalls {
-				result := a.tools.Execute(toolCtx, tc)
-				messages = append(messages, toolMessage(tc.ID, result))
-			}
+			// Compaction does not track collaborator delivery debt; a
+			// successful send here still clears nothing because debt is
+			// owned by Run. Passing nil keeps sleep available during save.
+			messages = a.executeToolCalls(toolCtx, messages, msg.ToolCalls, nil)
 		} else {
 			// Text-only response - agent is done saving state
 			break
@@ -937,13 +952,14 @@ func (a *Agent) gatherContextMemories() []bm25.Result {
 
 // injectPendingMessages drains the operator, subagent, scheduler, and
 // (when delivery=inject) peer inboxes and appends any pending entries
-// to the conversation. Returns the updated messages and whether
-// anything was injected.
+// to the conversation. Returns the updated messages, whether anything
+// was injected, and whether any of that injection was collaborator
+// (human) input — used to open delivery debt in Run.
 //
 // Queues are drained on every call (rather than checking HasPending
 // first) because the read is the same primitive as the drain; there
 // is no probe-then-take race to worry about.
-func (a *Agent) injectPendingMessages(messages []llm.Message) ([]llm.Message, bool) {
+func (a *Agent) injectPendingMessages(messages []llm.Message) ([]llm.Message, bool, bool) {
 	var pendingOp []string
 	if a.operator != nil {
 		pendingOp = a.operator.Pending()
@@ -959,10 +975,11 @@ func (a *Agent) injectPendingMessages(messages []llm.Message) ([]llm.Message, bo
 	}
 
 	if len(pendingOp) == 0 && len(pendingSub) == 0 && len(pendingScheduled) == 0 && len(pendingPeers) == 0 {
-		return messages, false
+		return messages, false, false
 	}
 
-	if len(pendingOp) > 0 {
+	collaborator := len(pendingOp) > 0
+	if collaborator {
 		messages = a.appendCollaboratorMessages(messages, pendingOp)
 	}
 	if len(pendingSub) > 0 {
@@ -974,7 +991,7 @@ func (a *Agent) injectPendingMessages(messages []llm.Message) ([]llm.Message, bo
 	if len(pendingPeers) > 0 {
 		messages = a.appendPeerMessages(messages, pendingPeers)
 	}
-	return messages, true
+	return messages, true, collaborator
 }
 
 // appendPeerMessages formats drained peer inbox entries as user turns.
@@ -1023,7 +1040,7 @@ func (a *Agent) appendCollaboratorMessages(messages []llm.Message, pending []str
 		a.logger.Info("injecting collaborator message into conversation", "text", text)
 		messages = append(messages, llm.Message{
 			Role: llm.RoleUser,
-			Content: fmt.Sprintf("[Collaborator message - %s]\n\nYour collaborator says: %s\n\nReply with send_message before continuing. If their message changes what you should do next, adjust your plan accordingly; otherwise resume where you left off.",
+			Content: fmt.Sprintf("[Collaborator message - %s]\n\nYour collaborator says: %s\n\nReply via send_message (or send_rich_message / send_voice_message) — assistant text is not delivered. You may use tools first if you need them, then send the answer in one go. For work that will take a while, an optional short real acknowledgment (what they asked + what you will check) is fine, but not required. Do not sleep until you have sent a reply.",
 				time.Now().Format(time.RFC1123), text),
 		})
 	}
