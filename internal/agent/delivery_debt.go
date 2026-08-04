@@ -49,8 +49,10 @@ func collaboratorSendSucceeded(name, result string) bool {
 // other tools (research, skills, MCP) remain allowed. An early
 // acknowledgment send is optional — the first successful send_* may be the
 // full answer. Debt clears after a successful send. debt may be nil when
-// the caller does not track it (e.g. compaction).
-func (a *Agent) executeToolCalls(ctx context.Context, messages []llm.Message, toolCalls []llm.ToolCall, debt *bool) []llm.Message {
+// the caller does not track it (e.g. compaction). scrubbed lists tool_call
+// IDs whose Arguments were rewritten from invalid JSON; those get a
+// synthetic error result instead of a real dispatch.
+func (a *Agent) executeToolCalls(ctx context.Context, messages []llm.Message, toolCalls []llm.ToolCall, debt *bool, scrubbed map[string]bool) []llm.Message {
 	a.tools.SetContextInfo(a.countMessageTokens(messages))
 	for _, tc := range toolCalls {
 		name := ""
@@ -58,10 +60,15 @@ func (a *Agent) executeToolCalls(ctx context.Context, messages []llm.Message, to
 			name = tc.Function.Name
 		}
 		var result string
-		if debt != nil && *debt && name == "sleep" {
+		switch {
+		case scrubbed[tc.ID]:
+			result = malformedToolArgsResult
+			a.logger.Warn("skipped tool call with invalid arguments JSON",
+				"tool", name, "tool_call_id", tc.ID)
+		case debt != nil && *debt && name == "sleep":
 			result = sleepBlockedByDeliveryDebt
 			a.logger.Info("sleep blocked: collaborator delivery debt outstanding")
-		} else {
+		default:
 			result = a.tools.Execute(ctx, tc)
 		}
 		if debt != nil && *debt && collaboratorSendSucceeded(name, result) {
