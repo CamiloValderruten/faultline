@@ -1583,6 +1583,11 @@ func (te *Executor) Execute(ctx context.Context, call llm.ToolCall) string {
 
 	start := time.Now()
 	result := te.dispatch(ctx, call)
+	// Universal safety net: MCP and other uncapped surfaces can return
+	// multi-megabyte payloads that blow the conversation past max_tokens
+	// in a single turn. Sandbox/web_fetch already self-cap; this catches
+	// everything else (and is a no-op when already under the limit).
+	result = truncateToolResult(result, te.limits.ToolResultChars)
 	duration := time.Since(start)
 
 	if te.observer != nil {

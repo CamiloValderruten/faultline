@@ -311,6 +311,11 @@ memory_search_result_chars = 6000
 # sandbox_read.
 sandbox_output_chars = 64000
 
+# Cap on every tool result returned to the LLM (including MCP). A single
+# large sheets dump can otherwise blow past max_tokens in one turn.
+# Zero disables. Defaults to 64000.
+tool_result_chars = 64000
+
 # ---------------------------------------------------------------------------
 # [embeddings] — semantic search (optional).
 #

@@ -51,6 +51,10 @@ url = "http://example.com/v1"
 		t.Errorf("Limits.SandboxOutputChars = %d, want default %d",
 			cfg.Limits.SandboxOutputChars, defaults.Limits.SandboxOutputChars)
 	}
+	if cfg.Limits.ToolResultChars != defaults.Limits.ToolResultChars {
+		t.Errorf("Limits.ToolResultChars = %d, want default %d",
+			cfg.Limits.ToolResultChars, defaults.Limits.ToolResultChars)
+	}
 }
 
 func TestLoadConfig_LimitsOverride(t *testing.T) {
@@ -61,6 +65,7 @@ func TestLoadConfig_LimitsOverride(t *testing.T) {
 recent_memory_chars = 12345
 memory_search_result_chars = 6789
 sandbox_output_chars = 100000
+tool_result_chars = 32000
 `
 	if err := os.WriteFile(path, []byte(contents), 0644); err != nil {
 		t.Fatal(err)
@@ -77,6 +82,9 @@ sandbox_output_chars = 100000
 	}
 	if cfg.Limits.SandboxOutputChars != 100000 {
 		t.Errorf("SandboxOutputChars = %d, want 100000", cfg.Limits.SandboxOutputChars)
+	}
+	if cfg.Limits.ToolResultChars != 32000 {
+		t.Errorf("ToolResultChars = %d, want 32000", cfg.Limits.ToolResultChars)
 	}
 }
 
