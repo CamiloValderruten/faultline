@@ -836,11 +836,36 @@ func (a *Agent) initializeContext() ([]llm.Message, map[string]string, int, erro
 func (a *Agent) compactContext(ctx context.Context, toolCtx context.Context, messages []llm.Message, toolDefs []llm.Tool, prompts map[string]string) ([]llm.Message, map[string]string, error) {
 	a.logger.Info("starting context compaction")
 
+	// Capture before we destroy history — the operator queue was already
+	// drained when this collaborator text was injected.
+	lastCollab := lastCollaboratorMessage(messages)
+
 	// Inject compaction prompt
 	messages = append(messages, llm.Message{
 		Role:    llm.RoleUser,
 		Content: prompt.Render(prompts["compaction"], time.Now()),
 	})
+
+	hardLimit := int(float64(a.cfg.Agent.MaxTokens) * 0.98)
+	saveBudget := int(float64(a.cfg.Agent.MaxTokens) * compactionSaveBudgetFrac)
+	if saveBudget > hardLimit {
+		saveBudget = hardLimit
+	}
+
+	// If a fat tool dump already pushed us past the hard ceiling, shrink
+	// tool payloads until a save turn can run. Without this, the loop
+	// below breaks immediately with summary="" and rebuildContext drops
+	// the in-progress task.
+	if est := a.countMessageTokens(messages); est > saveBudget {
+		if n := shrinkOversizedToolMessages(messages, saveBudget, a.countMessageTokens); n > 0 {
+			a.logger.Warn("shrunk oversized tool messages before compaction",
+				"truncated_msgs", n,
+				"tokens_before", est,
+				"tokens_after", a.countMessageTokens(messages),
+				"save_budget", saveBudget,
+			)
+		}
+	}
 
 	var summary string
 	const maxCompactionTurns = 10
@@ -848,8 +873,16 @@ func (a *Agent) compactContext(ctx context.Context, toolCtx context.Context, mes
 	for i := 0; i < maxCompactionTurns; i++ {
 		// Safety: don't exceed hard token limit during compaction
 		tokenEst := a.countMessageTokens(messages)
-		if tokenEst > int(float64(a.cfg.Agent.MaxTokens)*0.98) {
-			a.logger.Warn("approaching hard limit during compaction, using best available summary")
+		if tokenEst > hardLimit {
+			if n := shrinkOversizedToolMessages(messages, saveBudget, a.countMessageTokens); n > 0 {
+				a.logger.Warn("shrunk tool messages mid-compaction",
+					"truncated_msgs", n,
+					"tokens_est", a.countMessageTokens(messages),
+				)
+				continue
+			}
+			a.logger.Warn("approaching hard limit during compaction, using best available summary",
+				"tokens_est", tokenEst, "hard_limit", hardLimit)
 			break
 		}
 
@@ -886,6 +919,14 @@ func (a *Agent) compactContext(ctx context.Context, toolCtx context.Context, mes
 			// Text-only response - agent is done saving state
 			break
 		}
+	}
+
+	if summary == "" {
+		summary = compactionRecoverySummary(lastCollab)
+		a.logger.Warn("compaction produced no model summary; using recovery stub",
+			"recovery_len", len(summary),
+			"had_collaborator", lastCollab != "",
+		)
 	}
 
 	a.logger.Info("compaction complete, rebuilding context", "summary_len", len(summary))

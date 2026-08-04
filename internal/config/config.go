@@ -200,6 +200,11 @@ type LimitsConfig struct {
 	// sandbox_execute and sandbox_shell. Larger output should be written
 	// to /output/ and read back with sandbox_read.
 	SandboxOutputChars int `toml:"sandbox_output_chars"`
+
+	// ToolResultChars caps every tool result returned to the LLM via
+	// Execute (including MCP). Prevents a single fat sheet dump from
+	// blowing the conversation past max_tokens. Zero or negative disables.
+	ToolResultChars int `toml:"tool_result_chars"`
 }
 
 // Enabled returns true if Telegram is configured.
@@ -693,6 +698,7 @@ func Default() *Config {
 			RecentMemoryChars:       8000,
 			MemorySearchResultChars: 6000,
 			SandboxOutputChars:      64000,
+			ToolResultChars:         64000,
 		},
 		Update: UpdateConfig{
 			Enabled:       false,
