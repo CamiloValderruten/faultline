@@ -951,7 +951,7 @@ func (te *Executor) buildAllToolDefs() []llm.Tool {
 				Type: llm.ToolTypeFunction,
 				Function: &llm.FunctionDef{
 					Name:        "sandbox_write",
-					Description: "Create or overwrite a file in the sandbox. Writes the full file content. Use folder 'scripts' for Python scripts, 'input' for input data, 'output' for output data, 'html' for published pages (served at /html/<filename>). All filenames must be lowercase, flat (no subfolders), and contain only [a-z0-9._-].",
+					Description: "Create or overwrite a file in the sandbox. Writes the full file content. Use folder 'scripts' for Python scripts, 'input' for input data, 'output' for output data, 'html' for published pages (served at /html/<filename>). For large HTML/content, prefer sandbox_append in chunks (or a shorter first write) — oversized arguments are often truncated by the response token limit and fail. All filenames must be lowercase, flat (no subfolders), and contain only [a-z0-9._-].",
 					Parameters: map[string]interface{}{
 						"type": "object",
 						"properties": map[string]interface{}{

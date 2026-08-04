@@ -581,6 +581,18 @@ func (a *Agent) Run(ctx context.Context, shutdownCh <-chan struct{}) error {
 				}
 				continue
 			}
+			// Providers (notably MiniMax) reject the whole request when any
+			// prior tool call's arguments string is invalid JSON. Scrub and
+			// retry rather than crash-looping under docker restart policies.
+			if isInvalidToolArgs(err) {
+				if n := scrubInvalidToolCallArgsInHistory(messages); n > 0 {
+					a.recordError(err)
+					a.logger.Warn("llm rejected invalid tool args; scrubbed history and retrying",
+						"scrubbed", n, "error", err)
+					a.setPhase(PhaseIdle)
+					continue
+				}
+			}
 			return fmt.Errorf("llm chat: %w", err)
 		}
 
@@ -593,6 +605,11 @@ func (a *Agent) Run(ctx context.Context, shutdownCh <-chan struct{}) error {
 		a.recordChat(chatLatency, resp.Usage.PromptTokens, resp.Usage.CompletionTokens, finishReason, nil)
 
 		msg := resp.Choices[0].Message
+		scrubbed := scrubInvalidToolCallArgs(&msg)
+		if len(scrubbed) > 0 {
+			a.logger.Warn("scrubbed invalid tool call arguments before history append",
+				"count", len(scrubbed), "finish_reason", finishReason)
+		}
 		messages = append(messages, msg)
 
 		if msg.Content != "" {
@@ -634,7 +651,11 @@ func (a *Agent) Run(ctx context.Context, shutdownCh <-chan struct{}) error {
 			)
 			const deferredBody = "[Deferred] A collaborator message arrived before this tool call could run. Read it below and respond first. After responding, re-issue this tool call if it still makes sense, or move on if the new input changes your plan."
 			for _, tc := range msg.ToolCalls {
-				messages = append(messages, toolMessage(tc.ID, deferredBody))
+				body := deferredBody
+				if scrubbed[tc.ID] {
+					body = malformedToolArgsResult
+				}
+				messages = append(messages, toolMessage(tc.ID, body))
 			}
 			if len(pendingOp) > 0 {
 				messages = a.appendCollaboratorMessages(messages, pendingOp)
@@ -649,7 +670,7 @@ func (a *Agent) Run(ctx context.Context, shutdownCh <-chan struct{}) error {
 			// yield to a pending shutdown without waiting for ctx
 			// cancellation (which only happens on the second SIGINT).
 			a.setPhase(PhaseExecutingTool)
-			messages = a.executeToolCalls(toolCtx, messages, msg.ToolCalls, &collaboratorReplyOwed)
+			messages = a.executeToolCalls(toolCtx, messages, msg.ToolCalls, &collaboratorReplyOwed, scrubbed)
 			a.setPhase(PhaseIdle)
 			idleStreak = 0
 
@@ -771,6 +792,11 @@ func (a *Agent) initializeContext() ([]llm.Message, map[string]string, int, erro
 			resumed = append([]llm.Message{systemMsg}, saved...)
 		}
 
+		if n := scrubInvalidToolCallArgsInHistory(resumed); n > 0 {
+			a.logger.Warn("scrubbed invalid tool call arguments from resumed state",
+				"count", n)
+		}
+
 		a.logger.Info("context resumed from state file",
 			"messages", len(resumed),
 			"idle_streak", savedIdle,
@@ -837,6 +863,11 @@ func (a *Agent) compactContext(ctx context.Context, toolCtx context.Context, mes
 		}
 
 		msg := resp.Choices[0].Message
+		scrubbed := scrubInvalidToolCallArgs(&msg)
+		if len(scrubbed) > 0 {
+			a.logger.Warn("scrubbed invalid tool call arguments during compaction",
+				"count", len(scrubbed))
+		}
 		messages = append(messages, msg)
 
 		if msg.Content != "" {
@@ -850,7 +881,7 @@ func (a *Agent) compactContext(ctx context.Context, toolCtx context.Context, mes
 			// Compaction does not track collaborator delivery debt; a
 			// successful send here still clears nothing because debt is
 			// owned by Run. Passing nil keeps sleep available during save.
-			messages = a.executeToolCalls(toolCtx, messages, msg.ToolCalls, nil)
+			messages = a.executeToolCalls(toolCtx, messages, msg.ToolCalls, nil, scrubbed)
 		} else {
 			// Text-only response - agent is done saving state
 			break
@@ -1149,6 +1180,7 @@ func (a *Agent) gracefulSave(ctx context.Context, messages []llm.Message, toolDe
 		}
 
 		msg := resp.Choices[0].Message
+		scrubbed := scrubInvalidToolCallArgs(&msg)
 		messages = append(messages, msg)
 
 		if msg.Content != "" {
@@ -1158,11 +1190,7 @@ func (a *Agent) gracefulSave(ctx context.Context, messages []llm.Message, toolDe
 		a.logBackendPerf()
 
 		if len(msg.ToolCalls) > 0 {
-			a.tools.SetContextInfo(a.countMessageTokens(messages))
-			for _, tc := range msg.ToolCalls {
-				result := a.tools.Execute(saveCtx, tc)
-				messages = append(messages, toolMessage(tc.ID, result))
-			}
+			messages = a.executeToolCalls(saveCtx, messages, msg.ToolCalls, nil, scrubbed)
 		} else {
 			// No tool calls - agent is done saving
 			a.logger.Info("agent finished saving state (no more tool calls)")
