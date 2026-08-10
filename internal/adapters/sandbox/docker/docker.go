@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/CamiloValderruten/faultline/internal/config"
+	"github.com/CamiloValderruten/faultline/internal/daemon"
 	"github.com/CamiloValderruten/faultline/internal/log"
 )
 
@@ -36,6 +37,14 @@ type Sandbox struct {
 	execLog     *log.Daily // execution log in the logs directory
 	uid         int        // host uid for --user flag
 	gid         int        // host gid for --user flag
+
+	// daemonOwner / daemonMax are set by EnableDaemons when [daemons]
+	// is enabled. Empty owner means daemon tools stay offline.
+	daemonOwner string
+	daemonMax   int
+
+	alertInbox        *daemon.Inbox
+	daemonWatchCancel context.CancelFunc
 
 	// outputLimit caps stdout/stderr returned to the agent for both
 	// script execution and shell exec. Zero or negative disables the
@@ -145,6 +154,10 @@ func New(cfg config.SandboxConfig, workDir, logDir string, logger *slog.Logger) 
 // init creates the sandbox directory structure and seed files.
 // Close releases resources held by the sandbox (e.g. the execution log file).
 func (s *Sandbox) Close() error {
+	if s.daemonWatchCancel != nil {
+		s.daemonWatchCancel()
+		s.daemonWatchCancel = nil
+	}
 	if s.execLog != nil {
 		return s.execLog.Close()
 	}

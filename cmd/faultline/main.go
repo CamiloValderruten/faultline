@@ -160,6 +160,18 @@ func main() {
 		logger.Info("sandbox not configured, Python execution disabled")
 	}
 
+	if cfg.Daemons.Active() {
+		if sb == nil {
+			logger.Error("daemons requires sandbox")
+			os.Exit(1)
+		}
+		if err := sb.EnableDaemons(cfg.Daemons.Max); err != nil {
+			logger.Error("init daemons", "error", err)
+			os.Exit(1)
+		}
+		logger.Info("daemons enabled", "owner", sb.DaemonOwner(), "max", cfg.Daemons.Max)
+	}
+
 	chatLog, err := openai.NewChatLogger(cfg.Log.Dir)
 	if err != nil {
 		logger.Warn("could not open chat transcript log; continuing without it",
@@ -533,6 +545,11 @@ func main() {
 		logger.Info("peer messaging delivery=pull")
 	}
 
+	var daemonAlertsPort agent.DaemonAlerts
+	if sb != nil && sb.AlertInbox() != nil {
+		daemonAlertsPort = sb.AlertInbox()
+	}
+
 	a := agent.New(cfg, agent.Deps{
 		Chat:      chat,
 		Memory:    memory,
@@ -545,6 +562,7 @@ func main() {
 		Subagents: subagentsPort,
 		Scheduler: scheduler,
 		Peers:     peersPort,
+		Daemons:   daemonAlertsPort,
 	}, logger)
 	defer a.Close()
 

@@ -46,6 +46,11 @@ var tier1Tools = map[string]struct{}{
 	"sandbox_read":    {},
 	"sandbox_list":    {},
 
+	"daemon_spawn": {},
+	"daemon_list":  {},
+	"daemon_fetch": {},
+	"daemon_stop":  {},
+
 	"schedule_task":         {},
 	"list_scheduled_tasks":  {},
 	"cancel_scheduled_task": {},

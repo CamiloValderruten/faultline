@@ -128,6 +128,10 @@ var subagentForbidden = map[string]struct{}{
 	"peer_send":                 {},
 	"peer_inbox":                {},
 	"peer_read":                 {},
+	"daemon_spawn":              {},
+	"daemon_list":               {},
+	"daemon_fetch":              {},
+	"daemon_stop":               {},
 	"subagent_run":              {},
 	"subagent_spawn":            {},
 	"subagent_wait":             {},
@@ -945,6 +949,10 @@ func (te *Executor) buildAllToolDefs() []llm.Tool {
 		})
 	}
 
+	if te.daemonsEnabled() {
+		tools = append(tools, te.daemonToolDefs()...)
+	}
+
 	if te.sandbox != nil {
 		tools = append(tools,
 			llm.Tool{
@@ -1738,6 +1746,14 @@ func (te *Executor) dispatch(ctx context.Context, call llm.ToolCall) string {
 		return te.sandboxListPackages()
 	case "sandbox_shell":
 		return te.sandboxShell(ctx, args)
+	case "daemon_spawn":
+		return te.daemonSpawn(ctx, args)
+	case "daemon_list":
+		return te.daemonList(ctx)
+	case "daemon_fetch":
+		return te.daemonFetch(ctx, args)
+	case "daemon_stop":
+		return te.daemonStop(ctx, args)
 	// Skill tools (https://agentskills.io)
 	case "skill_activate":
 		return te.skillActivate(args)

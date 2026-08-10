@@ -425,3 +425,39 @@ delivery = "push"
 		t.Fatal("expected error for bad delivery")
 	}
 }
+
+func TestLoad_DaemonsRequiresSandbox(t *testing.T) {
+	dir := t.TempDir()
+
+	noSandbox := filepath.Join(dir, "no-sandbox.toml")
+	if err := os.WriteFile(noSandbox, []byte(`
+[api]
+url = "http://localhost/v1"
+[daemons]
+enabled = true
+`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Load(noSandbox); err == nil {
+		t.Fatal("expected error when daemons without sandbox")
+	}
+
+	ok := filepath.Join(dir, "ok.toml")
+	if err := os.WriteFile(ok, []byte(`
+[api]
+url = "http://localhost/v1"
+[sandbox]
+enabled = true
+[daemons]
+enabled = true
+`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := Load(ok)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !cfg.Daemons.Active() || cfg.Daemons.Max != 5 {
+		t.Fatalf("daemons=%+v", cfg.Daemons)
+	}
+}
