@@ -773,13 +773,18 @@ func (a *Agent) initializeContext() ([]llm.Message, map[string]string, int, erro
 	collaboratorGuide := a.gatherCollaboratorGuide()
 	now := time.Now()
 	basePrompt := prompts["system"]
+	identity := prompts["identity-core"]
+	overlay := prompts["agent"]
 	if a.systemPromptOverride != "" {
 		basePrompt = a.systemPromptOverride
+		// Subagents get an explicit task prompt — not the primary persona.
+		identity = ""
+		overlay = ""
 	}
 	fullSystemPrompt := prompt.BuildCycleContext(
 		basePrompt,
-		prompts["identity-core"],
-		prompts["agent"],
+		identity,
+		overlay,
 		memories, skillCatalog, subagentCatalog, collaboratorGuide, now,
 		a.cfg.Limits.RecentMemoryChars,
 	)
@@ -969,10 +974,18 @@ func (a *Agent) rebuildContext(summary string) ([]llm.Message, map[string]string
 	subagentCatalog := a.gatherSubagentCatalog()
 	collaboratorGuide := a.gatherCollaboratorGuide()
 	now := time.Now()
+	basePrompt := prompts["system"]
+	identity := prompts["identity-core"]
+	overlay := prompts["agent"]
+	if a.systemPromptOverride != "" {
+		basePrompt = a.systemPromptOverride
+		identity = ""
+		overlay = ""
+	}
 	fullSystemPrompt := prompt.BuildCycleContext(
-		prompts["system"],
-		prompts["identity-core"],
-		prompts["agent"],
+		basePrompt,
+		identity,
+		overlay,
 		memories, skillCatalog, subagentCatalog, collaboratorGuide, now,
 		a.cfg.Limits.RecentMemoryChars,
 	)

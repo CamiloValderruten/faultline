@@ -213,17 +213,58 @@ func TestDefaultSystemPromptIncludesAutonomyConventions(t *testing.T) {
 
 func TestLoad_PreservesUserEdits(t *testing.T) {
 	m := newMemStore()
-	custom := "MY CUSTOM SYSTEM PROMPT"
-	if err := m.Write("prompts/system.md", custom); err != nil {
+	custom := "MY CUSTOM CONTINUE PROMPT"
+	if err := m.Write("prompts/continue.md", custom); err != nil {
 		t.Fatal(err)
 	}
 
-	got, err := Load(m, "system")
+	got, err := Load(m, "continue")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if got != custom {
-		t.Errorf("Load returned %q, want %q (should not overwrite existing)", got, custom)
+		t.Errorf("Load did not preserve user edits: got %q", got)
+	}
+}
+
+func TestLoad_SystemIgnoresDiskEdits(t *testing.T) {
+	m := newMemStore()
+	if err := m.Write("prompts/system.md", "HACKED RULEBOOK"); err != nil {
+		t.Fatal(err)
+	}
+	got, err := Load(m, "system")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got == "HACKED RULEBOOK" {
+		t.Fatal("Load(system) must ignore on-disk edits")
+	}
+	if !strings.Contains(got, "Code-owned") && !strings.Contains(got, "autonomous AI agent") {
+		t.Fatalf("expected embedded system prompt, got %q", got[:min(80, len(got))])
+	}
+	// Mirror on disk refreshed to embed.
+	disk, err := m.Read("prompts/system.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if disk != got {
+		t.Fatal("on-disk mirror should match embedded system prompt after Load")
+	}
+}
+
+func TestIsCodeOwnedPath(t *testing.T) {
+	cases := map[string]bool{
+		"prompts/system.md":                 true,
+		"prompts/system":                    true,
+		"PROMPTS/SYSTEM.MD":                 true,
+		"prompts/system.20260501-120000.md": true,
+		"prompts/agent.md":                  false,
+		"identity/core.md":                  false,
+	}
+	for path, want := range cases {
+		if got := IsCodeOwnedPath(path); got != want {
+			t.Errorf("IsCodeOwnedPath(%q)=%v want %v", path, got, want)
+		}
 	}
 }
 

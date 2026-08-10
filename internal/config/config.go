@@ -392,7 +392,7 @@ func (e EmbeddingsConfig) Active() bool {
 //
 // SystemDir is the shipped/read-only root (repo skills/, compose :ro
 // mount). Dir is the writable user root (operator drops + skill_install).
-// On name collision the user skill overrides the system skill.
+// On name collision the system skill wins (fail-closed).
 //
 // Skill execution always runs through the Docker sandbox with a
 // per-call /work scratch directory; the sandbox feature must be

@@ -203,7 +203,7 @@ func TestStore_SystemAndUserRoots(t *testing.T) {
 	system := t.TempDir()
 	writeSkill(t, system, "html-artifact", "---\nname: html-artifact\ndescription: System canvas.\n---\n")
 	writeSkill(t, user, "finances", "---\nname: finances\ndescription: User finance.\n---\n")
-	// User overrides system on same name.
+	// User skill with same name as system must not win.
 	writeSkill(t, system, "shared", "---\nname: shared\ndescription: From system.\n---\n")
 	writeSkill(t, user, "shared", "---\nname: shared\ndescription: From user.\n---\n")
 
@@ -225,8 +225,8 @@ func TestStore_SystemAndUserRoots(t *testing.T) {
 	if byName["finances"].Source != skills.SourceUser {
 		t.Errorf("finances source=%q", byName["finances"].Source)
 	}
-	if byName["shared"].Source != skills.SourceUser || byName["shared"].Description != "From user." {
-		t.Errorf("shared should be user override: %+v", byName["shared"])
+	if byName["shared"].Source != skills.SourceSystem || byName["shared"].Description != "From system." {
+		t.Errorf("shared should keep system skill (fail-closed): %+v", byName["shared"])
 	}
 	if got := s.Root(); got == "" {
 		t.Error("Root should be user dir")

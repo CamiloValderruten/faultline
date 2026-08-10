@@ -27,6 +27,7 @@ import (
 	"github.com/CamiloValderruten/faultline/internal/llm"
 	"github.com/CamiloValderruten/faultline/internal/messaging"
 	"github.com/CamiloValderruten/faultline/internal/peer"
+	"github.com/CamiloValderruten/faultline/internal/prompts"
 	"github.com/CamiloValderruten/faultline/internal/schedule"
 	"github.com/CamiloValderruten/faultline/internal/search/bm25"
 	"github.com/CamiloValderruten/faultline/internal/search/vector"
@@ -55,6 +56,15 @@ func validateMemoryPath(path string) error {
 		}
 	}
 	return nil
+}
+
+// refuseCodeOwnedPath returns an error string if path is a code-owned
+// prompt (currently prompts/system.md). Empty string means allowed.
+func refuseCodeOwnedPath(path string) string {
+	if prompts.IsCodeOwnedPath(path) {
+		return "Error: prompts/system.md is code-owned (shipped in the faultline binary via GitHub). It cannot be edited by the agent. Put personal operating notes in prompts/agent.md."
+	}
+	return ""
 }
 
 // lineCount returns the number of newline-delimited lines in s. A
@@ -2629,6 +2639,9 @@ func (te *Executor) memoryWrite(argsJSON string) string {
 	if err := validateMemoryPath(args.Path); err != nil {
 		return fmt.Sprintf("Error: %s", err)
 	}
+	if msg := refuseCodeOwnedPath(args.Path); msg != "" {
+		return msg
+	}
 
 	if err := te.memory.Write(args.Path, args.Content); err != nil {
 		return fmt.Sprintf("Error: %s", err)
@@ -2899,6 +2912,9 @@ func (te *Executor) memoryDelete(argsJSON string) string {
 	if args.Path == "" {
 		return "Error: path is required"
 	}
+	if msg := refuseCodeOwnedPath(args.Path); msg != "" {
+		return msg
+	}
 
 	// Check what we're deleting for the confirmation message
 	stat, _ := te.memory.Stat(args.Path)
@@ -2936,6 +2952,9 @@ func (te *Executor) memoryRestore(argsJSON string) string {
 
 	if args.Path == "" {
 		return "Error: path is required"
+	}
+	if msg := refuseCodeOwnedPath(args.Path); msg != "" {
+		return msg
 	}
 
 	restoredPath, err := te.memory.Restore(args.Path)
@@ -3017,6 +3036,12 @@ func (te *Executor) memoryMove(argsJSON string) string {
 	}
 	if args.Destination == "" {
 		return "Error: destination is required"
+	}
+	if msg := refuseCodeOwnedPath(args.Source); msg != "" {
+		return msg
+	}
+	if msg := refuseCodeOwnedPath(args.Destination); msg != "" {
+		return msg
 	}
 
 	// Check if source is a directory before moving
@@ -3385,6 +3410,9 @@ func (te *Executor) memoryEdit(argsJSON string) string {
 	if args.OldString == "" {
 		return "Error: old_string is required"
 	}
+	if msg := refuseCodeOwnedPath(args.Path); msg != "" {
+		return msg
+	}
 
 	count, err := te.memory.Edit(args.Path, args.OldString, args.NewString, args.ReplaceAll)
 	if err != nil {
@@ -3420,6 +3448,9 @@ func (te *Executor) memoryAppend(argsJSON string) string {
 	if args.Content == "" {
 		return "Error: content is required"
 	}
+	if msg := refuseCodeOwnedPath(args.Path); msg != "" {
+		return msg
+	}
 
 	if err := te.memory.Append(args.Path, args.Content); err != nil {
 		return fmt.Sprintf("Error: %s", err)
@@ -3454,6 +3485,9 @@ func (te *Executor) memoryInsert(argsJSON string) string {
 	}
 	if args.Content == "" {
 		return "Error: content is required"
+	}
+	if msg := refuseCodeOwnedPath(args.Path); msg != "" {
+		return msg
 	}
 
 	newTotal, err := te.memory.Insert(args.Path, args.Line, args.Content)

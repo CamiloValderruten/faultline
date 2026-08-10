@@ -43,8 +43,9 @@ const MaxResourceListing = 50
 //   - systemRoot: shipped / read-only skills (repo skills/, image bake)
 //   - userRoot: operator drops and skill_install target
 //
-// On name collision the user skill wins (local override) and a warning
-// is logged. skill_install always writes into userRoot only.
+// On name collision the first root wins (system is scanned before
+// user) and a warning is logged — user skills cannot silently replace
+// shipped system skills. skill_install always writes into userRoot only.
 type Store struct {
 	userRoot   string
 	systemRoot string
@@ -137,9 +138,9 @@ func (s *Store) Reload() error {
 }
 
 // scanRoot walks one skills root and merges discovered skills into
-// catalog. Empty root or missing directory is a no-op. When source is
-// user and a name already exists (from system), the user skill replaces
-// it with a warning.
+// catalog. Empty root or missing directory is a no-op. On name
+// collision the first root wins (system is scanned before user) —
+// fail-closed so user skills cannot silently replace system ones.
 func (s *Store) scanRoot(root, source string, catalog map[string]*skills.Skill) error {
 	if root == "" {
 		return nil
@@ -195,18 +196,14 @@ func (s *Store) scanRoot(root, source string, catalog map[string]*skills.Skill) 
 		sk.Source = source
 
 		if existing, exists := catalog[sk.Name]; exists {
-			if source == skills.SourceUser {
-				s.logger.Warn("skills: name collision; user skill overrides system",
-					slog.String("name", sk.Name),
-					slog.String("kept", sk.Dir),
-					slog.String("dropped", existing.Dir))
-				catalog[sk.Name] = sk
-			} else {
-				s.logger.Warn("skills: name collision; keeping first found",
-					slog.String("name", sk.Name),
-					slog.String("kept", existing.Dir),
-					slog.String("dropped", sk.Dir))
-			}
+			// Fail closed: never let a user skill silently replace a
+			// system skill. Keep the first (system) entry.
+			s.logger.Warn("skills: name collision; keeping first found (fail-closed)",
+				slog.String("name", sk.Name),
+				slog.String("kept", existing.Dir),
+				slog.String("kept_source", existing.Source),
+				slog.String("dropped", sk.Dir),
+				slog.String("dropped_source", source))
 			continue
 		}
 		catalog[sk.Name] = sk

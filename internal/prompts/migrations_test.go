@@ -84,8 +84,8 @@ func TestMigration002ShipsPromptHierarchy(t *testing.T) {
 	for _, want := range []string{
 		"already applied",
 		"prompts/agent.md",
-		"identity is already in your system message",
-		"Shared rulebook",
+		"Leave every other file untouched",
+		"seeded prompts/agent.md",
 	} {
 		if !strings.Contains(m.Body, want) {
 			t.Errorf("migration 002 body missing %q", want)

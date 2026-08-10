@@ -1,10 +1,14 @@
-// Package prompts loads and renders the agent's mutable prompt templates.
+// Package prompts loads and renders the agent's prompt templates.
 //
-// The default prompt contents are embedded into the binary at build time
-// from internal/prompts/templates/. On first run, defaults are written to
-// the agent's memory store; on subsequent runs they are loaded from disk,
-// which lets the agent edit its own prompts and have those edits persist
-// across restarts.
+// prompts/system.md (the shared rulebook) is code-owned: its content is
+// always the embedded template compiled into the binary from
+// templates/system.md. Changes ship only via GitHub PRs. The on-disk
+// copy is a refreshed mirror for operators; agent memory tools refuse
+// to mutate it.
+//
+// All other prompt files (cycle-start, continue, compaction, shutdown,
+// agent overlay, identity, changelog) are seeded once from embeds and
+// then owned by the agent / operator on disk.
 package prompts
 
 import (
@@ -145,12 +149,52 @@ func init() {
 	}
 }
 
+// SystemPath is the memory-store path of the shared operating rulebook.
+// Content always comes from the binary embed (GitHub), never from
+// agent edits.
+const SystemPath = "prompts/system.md"
+
+// IsCodeOwnedPath reports whether path is a prompt file the agent must
+// not mutate. Matching is case-insensitive and tolerates a missing .md
+// suffix (the memory store appends .md automatically).
+func IsCodeOwnedPath(path string) bool {
+	p := strings.TrimSpace(strings.ToLower(path))
+	p = strings.TrimPrefix(p, "/")
+	p = strings.TrimSuffix(p, "/")
+	if p == "" {
+		return false
+	}
+	if !strings.HasSuffix(p, ".md") {
+		p += ".md"
+	}
+	if p == SystemPath {
+		return true
+	}
+	// Trash-timestamped copies of the rulebook (prompts/system.YYYYMMDD-HHMMSS.md).
+	if strings.HasPrefix(p, "prompts/system.") && strings.HasSuffix(p, ".md") {
+		return true
+	}
+	return false
+}
+
 // Load loads a prompt from the store, seeding the embedded default if it
 // doesn't exist yet.
+//
+// The "system" prompt is special: it always returns the embedded
+// template and refreshes the on-disk mirror so operators inspecting
+// prompts/system.md see what the running binary ships. Disk edits are
+// ignored.
 func Load(store Store, name string) (string, error) {
 	pf, ok := files[name]
 	if !ok {
 		return "", fmt.Errorf("unknown prompt: %s", name)
+	}
+
+	if name == "system" {
+		// Best-effort mirror sync. Failure to write must not block the
+		// agent — the embed is still the live rulebook.
+		_ = store.Write(pf.path, pf.defaultValue)
+		return pf.defaultValue, nil
 	}
 
 	content, err := store.Read(pf.path)
@@ -218,7 +262,7 @@ func BuildCycleContext(systemPrompt, identity, agentOverlay string, memories []b
 	sb.WriteString("\n\n---\n\n")
 	fmt.Fprintf(&sb, "**Current Time**: %s\n\n", now.Format(time.RFC1123))
 
-	writeCappedSection(&sb, "Identity", "identity/core.md", identity, charLimit)
+	writeCappedSection(&sb, "Identity", "identity/core.md", identity, 0) // never silently truncate who you are
 	writeCappedSection(&sb, "Agent Overlay", "prompts/agent.md", agentOverlay, charLimit)
 
 	if guide := strings.TrimSpace(collaboratorGuide); guide != "" {

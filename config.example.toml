@@ -399,8 +399,8 @@ batch_size = 100
 #
 # SystemDir is typically a read-only mount of the repo skills/ tree
 # (html-artifact, daemons, subagents). Dir is the writable per-agent root
-# for operator drops and skill_install. On name collision the user skill
-# overrides the system skill.
+# for operator drops and skill_install. On name collision the system
+# skill wins (fail-closed; user cannot silently replace shipped skills).
 #
 # Skill execution always runs through the [sandbox] feature, which must
 # be enabled separately for skill_execute. Each skill_execute mounts only

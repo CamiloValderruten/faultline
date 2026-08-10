@@ -138,7 +138,7 @@ func (te *Executor) skillInstall(ctx context.Context, argsJSON string) string {
 	if te.skills != nil {
 		if existing, ok := te.skills.Lookup(desiredName); ok {
 			if existing.Source == skills.SourceSystem {
-				return fmt.Sprintf("Error: %q is a system skill (read-only). Install under a different name, or override by placing a skill folder in the user skills dir manually.", desiredName)
+				return fmt.Sprintf("Error: %q is a system skill (read-only). Install under a different name — user skills cannot replace system skills.", desiredName)
 			}
 			return fmt.Sprintf("Error: a skill named %q already exists. Delete it from the user skills dir first if you want to reinstall.", desiredName)
 		}

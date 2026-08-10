@@ -237,3 +237,14 @@ func TestBuildCycleContext_BlankIdentityOmitted(t *testing.T) {
 	}
 }
 
+func TestBuildCycleContext_IdentityNeverTruncated(t *testing.T) {
+	long := strings.TrimSpace(strings.Repeat("I am Arlo. ", 2000)) // well over typical memory char limit
+	got := BuildCycleContext("SYS", long, "", nil, nil, nil, "", time.Now(), 100)
+	if strings.Contains(got, "truncated") && strings.Contains(got, "identity/core.md") {
+		t.Fatal("identity must not be silently truncated")
+	}
+	if !strings.Contains(got, long) {
+		t.Fatal("full identity body should appear in system message")
+	}
+}
+
