@@ -36,10 +36,10 @@ type Agent struct {
 	tokenizer            Tokenizer // nil when no real tokenizer is detected
 	tools                Tools
 	state                StateStore
-	skills               Skills    // nil when skills support is disabled
-	subagents            Subagents // nil for primaries with [subagent] off and for all children
-	scheduler            Scheduler // nil when scheduled tasks are disabled
-	peers                Peers     // nil when peers off or delivery=pull
+	skills               Skills       // nil when skills support is disabled
+	subagents            Subagents    // nil for primaries with [subagent] off and for all children
+	scheduler            Scheduler    // nil when scheduled tasks are disabled
+	peers                Peers        // nil when peers off or delivery=pull
 	daemonAlerts         DaemonAlerts // nil when [daemons] off
 	logger               *slog.Logger
 	maxTurns             int    // 0 means unlimited; >0 caps Run loop iterations (subagent use)
@@ -68,10 +68,10 @@ type Deps struct {
 	Tokenizer Tokenizer // optional
 	Tools     Tools
 	State     StateStore
-	Skills    Skills    // optional
-	Subagents Subagents // optional; primary only
-	Scheduler Scheduler // optional; primary only
-	Peers     Peers     // optional; primary only, inject delivery
+	Skills    Skills       // optional
+	Subagents Subagents    // optional; primary only
+	Scheduler Scheduler    // optional; primary only
+	Peers     Peers        // optional; primary only, inject delivery
 	Daemons   DaemonAlerts // optional; primary only when [daemons] enabled
 
 	// MaxTurns caps the Run loop's iteration count. Zero means

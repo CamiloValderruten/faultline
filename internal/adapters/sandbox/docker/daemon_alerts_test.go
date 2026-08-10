@@ -24,10 +24,10 @@ func TestParseAlertLine(t *testing.T) {
 func TestPollDaemonAlertsEnqueues(t *testing.T) {
 	dir := t.TempDir()
 	s := &Sandbox{
-		dir:        dir,
+		dir:         dir,
 		daemonOwner: "owner",
-		alertInbox: daemon.NewInbox(10),
-		logger:     nil,
+		alertInbox:  daemon.NewInbox(10),
+		logger:      nil,
 	}
 	id := "abc123"
 	work := filepath.Join(dir, "daemons", id)

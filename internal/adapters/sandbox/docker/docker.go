@@ -43,8 +43,8 @@ type Sandbox struct {
 	daemonOwner string
 	daemonMax   int
 
-	alertInbox         *daemon.Inbox
-	daemonWatchCancel  context.CancelFunc
+	alertInbox        *daemon.Inbox
+	daemonWatchCancel context.CancelFunc
 
 	// outputLimit caps stdout/stderr returned to the agent for both
 	// script execution and shell exec. Zero or negative disables the
