@@ -1,6 +1,8 @@
 package docker
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -13,9 +15,10 @@ func TestDaemonRunArgsDetachedPersistent(t *testing.T) {
 		uid:         1000,
 		gid:         1000,
 	}
+	owner := "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee"
 	args := s.daemonRunArgs(
-		"faultline-daemon-coco-abc123",
-		"coco", "abc123", "price-watch", "Poll BTC prices",
+		"faultline-daemon-aaaaaaaa-abc123",
+		owner, "abc123", "price-watch", "Poll BTC prices",
 		"2026-08-10T17:00:00Z",
 		map[string]string{"SYMBOL": "BTC"},
 		[]string{"python3", "/scripts/watch.py"},
@@ -24,9 +27,9 @@ func TestDaemonRunArgsDetachedPersistent(t *testing.T) {
 	for _, want := range []string{
 		"run", "-d",
 		"--restart\x00unless-stopped",
-		"--name\x00faultline-daemon-coco-abc123",
+		"--name\x00faultline-daemon-aaaaaaaa-abc123",
 		"--label\x00faultline.daemon=1",
-		"--label\x00faultline.agent=coco",
+		"--label\x00faultline.owner=" + owner,
 		"--label\x00faultline.daemon.id=abc123",
 		"--label\x00faultline.daemon.name=price-watch",
 		"--label\x00faultline.daemon.description=Poll BTC prices",
@@ -56,7 +59,7 @@ func TestDaemonRunArgsInheritsNetwork(t *testing.T) {
 		gid:         1000,
 		network:     true,
 	}
-	args := s.daemonRunArgs("n", "coco", "id", "n", "d", "t", nil, []string{"python3", "/scripts/x.py"})
+	args := s.daemonRunArgs("n", "owner", "id", "n", "d", "t", nil, []string{"python3", "/scripts/x.py"})
 	if strings.Contains(strings.Join(args, "\x00"), "--network=none") {
 		t.Fatalf("expected sandbox network inherited: %v", args)
 	}
@@ -77,5 +80,35 @@ func TestDaemonScriptFilename(t *testing.T) {
 		if _, err := daemonScriptFilename(bad); err == nil {
 			t.Fatalf("expected reject for %v", bad)
 		}
+	}
+}
+
+func TestEnsureDaemonOwnerPersists(t *testing.T) {
+	dir := t.TempDir()
+	s := &Sandbox{dir: dir}
+	if err := s.EnableDaemons(3); err != nil {
+		t.Fatal(err)
+	}
+	first := s.DaemonOwner()
+	if first == "" || !strings.Contains(first, "-") {
+		t.Fatalf("owner = %q", first)
+	}
+	data, err := os.ReadFile(filepath.Join(dir, daemonOwnerFile))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.TrimSpace(string(data)) != first {
+		t.Fatalf("file = %q want %q", data, first)
+	}
+
+	s2 := &Sandbox{dir: dir}
+	if err := s2.EnableDaemons(3); err != nil {
+		t.Fatal(err)
+	}
+	if s2.DaemonOwner() != first {
+		t.Fatalf("owner changed across EnableDaemons: %q vs %q", s2.DaemonOwner(), first)
+	}
+	if s2.daemonMax != 3 {
+		t.Fatalf("daemonMax = %d", s2.daemonMax)
 	}
 }

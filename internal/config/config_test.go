@@ -426,23 +426,8 @@ delivery = "push"
 	}
 }
 
-func TestLoad_DaemonsRequiresAgentAndSandbox(t *testing.T) {
+func TestLoad_DaemonsRequiresSandbox(t *testing.T) {
 	dir := t.TempDir()
-
-	noAgent := filepath.Join(dir, "no-agent.toml")
-	if err := os.WriteFile(noAgent, []byte(`
-[api]
-url = "http://localhost/v1"
-[sandbox]
-enabled = true
-[daemons]
-enabled = true
-`), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := Load(noAgent); err == nil {
-		t.Fatal("expected error when daemons.enabled without agent")
-	}
 
 	noSandbox := filepath.Join(dir, "no-sandbox.toml")
 	if err := os.WriteFile(noSandbox, []byte(`
@@ -450,7 +435,6 @@ enabled = true
 url = "http://localhost/v1"
 [daemons]
 enabled = true
-agent = "coco"
 `), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -466,7 +450,6 @@ url = "http://localhost/v1"
 enabled = true
 [daemons]
 enabled = true
-agent = "Coco"
 `), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -474,7 +457,7 @@ agent = "Coco"
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !cfg.Daemons.Active() || cfg.Daemons.Agent != "coco" {
+	if !cfg.Daemons.Active() || cfg.Daemons.Max != 5 {
 		t.Fatalf("daemons=%+v", cfg.Daemons)
 	}
 }

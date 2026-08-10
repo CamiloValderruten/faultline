@@ -2,6 +2,8 @@ package docker
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"fmt"
 	"os"
 	"os/exec"
@@ -13,16 +15,18 @@ import (
 
 const (
 	labelDaemon          = "faultline.daemon"
-	labelAgent           = "faultline.agent"
+	labelOwner           = "faultline.owner"
 	labelDaemonID        = "faultline.daemon.id"
 	labelDaemonName      = "faultline.daemon.name"
 	labelDaemonDesc      = "faultline.daemon.description"
 	labelDaemonCreatedAt = "faultline.daemon.created_at"
 
+	daemonOwnerFile           = ".daemon-owner"
 	maxDaemonDescriptionRunes = 512
+	defaultDaemonMax          = 5
 )
 
-// DaemonInfo is one long-lived daemon container owned by an agent.
+// DaemonInfo is one long-lived daemon container owned by this sandbox.
 type DaemonInfo struct {
 	ID          string `json:"daemon_id"`
 	Name        string `json:"name"`
@@ -32,16 +36,67 @@ type DaemonInfo struct {
 	CreatedAt   string `json:"created_at,omitempty"`
 }
 
+// EnableDaemons loads or creates a stable owner UUID under the sandbox
+// dir and sets the max concurrent daemon cap. Call once at startup when
+// [daemons] is enabled.
+func (s *Sandbox) EnableDaemons(max int) error {
+	if max <= 0 {
+		max = defaultDaemonMax
+	}
+	owner, err := s.ensureDaemonOwner()
+	if err != nil {
+		return err
+	}
+	s.daemonOwner = owner
+	s.daemonMax = max
+	return nil
+}
+
+// DaemonOwner returns the stable owner UUID, or "" when daemons are disabled.
+func (s *Sandbox) DaemonOwner() string { return s.daemonOwner }
+
+func (s *Sandbox) ensureDaemonOwner() (string, error) {
+	path := filepath.Join(s.dir, daemonOwnerFile)
+	data, err := os.ReadFile(path)
+	if err == nil {
+		id := strings.TrimSpace(string(data))
+		if id != "" {
+			return id, nil
+		}
+	} else if !os.IsNotExist(err) {
+		return "", fmt.Errorf("read %s: %w", daemonOwnerFile, err)
+	}
+	b := make([]byte, 16)
+	if _, err := rand.Read(b); err != nil {
+		return "", fmt.Errorf("generate daemon owner id: %w", err)
+	}
+	// ponytail: UUID v4-ish string without importing a UUID package
+	b[6] = (b[6] & 0x0f) | 0x40
+	b[8] = (b[8] & 0x3f) | 0x80
+	id := fmt.Sprintf("%s-%s-%s-%s-%s",
+		hex.EncodeToString(b[0:4]),
+		hex.EncodeToString(b[4:6]),
+		hex.EncodeToString(b[6:8]),
+		hex.EncodeToString(b[8:10]),
+		hex.EncodeToString(b[10:16]),
+	)
+	if err := os.WriteFile(path, []byte(id+"\n"), 0o600); err != nil {
+		return "", fmt.Errorf("write %s: %w", daemonOwnerFile, err)
+	}
+	return id, nil
+}
+
 // daemonRunArgs builds `docker run -d` args for a persistent daemon.
-// No --rm: the container must survive stop/reboot for label rediscovery.
-func (s *Sandbox) daemonRunArgs(containerName, agent, id, name, description, createdAt string, env map[string]string, command []string) []string {
+// No --rm: the container must survive stop/reboot for label rediscovery
+// until intentionally removed by StopDaemon.
+func (s *Sandbox) daemonRunArgs(containerName, owner, id, name, description, createdAt string, env map[string]string, command []string) []string {
 	workHost := filepath.Join(s.dir, "daemons", id)
 	args := []string{
 		"run", "-d",
 		"--restart", "unless-stopped",
 		"--name", containerName,
 		"--label", labelDaemon + "=1",
-		"--label", labelAgent + "=" + agent,
+		"--label", labelOwner + "=" + owner,
 		"--label", labelDaemonID + "=" + id,
 		"--label", labelDaemonName + "=" + name,
 		"--label", labelDaemonDesc + "=" + description,
@@ -80,13 +135,13 @@ func (s *Sandbox) daemonRunArgs(containerName, agent, id, name, description, cre
 // StartDaemon starts a detached container that survives Faultline and
 // host restarts (--restart unless-stopped). command must reference a
 // flat file under /scripts/.
-func (s *Sandbox) StartDaemon(ctx context.Context, agent, name, description string, command []string, env map[string]string) (DaemonInfo, error) {
-	agent = strings.ToLower(strings.TrimSpace(agent))
+func (s *Sandbox) StartDaemon(ctx context.Context, name, description string, command []string, env map[string]string) (DaemonInfo, error) {
+	owner := s.daemonOwner
+	if owner == "" {
+		return DaemonInfo{}, fmt.Errorf("daemons not enabled")
+	}
 	name = strings.ToLower(strings.TrimSpace(name))
 	description = strings.TrimSpace(description)
-	if agent == "" {
-		return DaemonInfo{}, fmt.Errorf("agent is required")
-	}
 	if !filenamePattern.MatchString(name) {
 		return DaemonInfo{}, fmt.Errorf("invalid name %q: use lowercase [a-z0-9._-]", name)
 	}
@@ -108,15 +163,31 @@ func (s *Sandbox) StartDaemon(ctx context.Context, agent, name, description stri
 		return DaemonInfo{}, fmt.Errorf("script %q not found in sandbox/scripts", script)
 	}
 
+	existing, err := s.ListDaemons(ctx)
+	if err != nil {
+		return DaemonInfo{}, err
+	}
+	max := s.daemonMax
+	if max <= 0 {
+		max = defaultDaemonMax
+	}
+	if len(existing) >= max {
+		return DaemonInfo{}, fmt.Errorf("daemon limit reached (%d); stop one before spawning another", max)
+	}
+
 	id := randomID()
-	containerName := fmt.Sprintf("faultline-daemon-%s-%s", agent, id)
+	shortOwner := strings.ReplaceAll(owner, "-", "")
+	if len(shortOwner) > 8 {
+		shortOwner = shortOwner[:8]
+	}
+	containerName := fmt.Sprintf("faultline-daemon-%s-%s", shortOwner, id)
 	createdAt := time.Now().UTC().Format(time.RFC3339)
 	workHost := filepath.Join(s.dir, "daemons", id)
 	if err := os.MkdirAll(workHost, 0o755); err != nil {
 		return DaemonInfo{}, fmt.Errorf("create daemon work dir: %w", err)
 	}
 
-	args := s.daemonRunArgs(containerName, agent, id, name, description, createdAt, env, command)
+	args := s.daemonRunArgs(containerName, owner, id, name, description, createdAt, env, command)
 	s.logger.Debug("docker run (daemon)", "container", containerName, "args", redactDockerArgs(args))
 	cmd := exec.CommandContext(ctx, "docker", args...)
 	out, err := cmd.CombinedOutput()
@@ -134,16 +205,16 @@ func (s *Sandbox) StartDaemon(ctx context.Context, agent, name, description stri
 	}, nil
 }
 
-// ListDaemons returns all daemon containers owned by agent (running or exited).
-func (s *Sandbox) ListDaemons(ctx context.Context, agent string) ([]DaemonInfo, error) {
-	agent = strings.ToLower(strings.TrimSpace(agent))
-	if agent == "" {
-		return nil, fmt.Errorf("agent is required")
+// ListDaemons returns all daemon containers owned by this sandbox (running or exited).
+func (s *Sandbox) ListDaemons(ctx context.Context) ([]DaemonInfo, error) {
+	owner := s.daemonOwner
+	if owner == "" {
+		return nil, fmt.Errorf("daemons not enabled")
 	}
 	format := "{{.Names}}\t{{.Status}}\t{{.Label \"" + labelDaemonID + "\"}}\t{{.Label \"" + labelDaemonName + "\"}}\t{{.Label \"" + labelDaemonDesc + "\"}}\t{{.Label \"" + labelDaemonCreatedAt + "\"}}"
 	cmd := exec.CommandContext(ctx, "docker", "ps", "-a",
 		"--filter", "label="+labelDaemon+"=1",
-		"--filter", "label="+labelAgent+"="+agent,
+		"--filter", "label="+labelOwner+"="+owner,
 		"--format", format,
 	)
 	out, err := cmd.CombinedOutput()
@@ -173,8 +244,8 @@ func (s *Sandbox) ListDaemons(ctx context.Context, agent string) ([]DaemonInfo, 
 }
 
 // FetchDaemonLogs returns the last tail lines of container logs for a daemon id.
-func (s *Sandbox) FetchDaemonLogs(ctx context.Context, agent, id string, tail int) (string, error) {
-	name, err := s.daemonContainerName(ctx, agent, id)
+func (s *Sandbox) FetchDaemonLogs(ctx context.Context, id string, tail int) (string, error) {
+	name, err := s.daemonContainerName(ctx, id)
 	if err != nil {
 		return "", err
 	}
@@ -192,13 +263,14 @@ func (s *Sandbox) FetchDaemonLogs(ctx context.Context, agent, id string, tail in
 	return string(out), nil
 }
 
-// StopDaemon clears restart policy then stops the container so host
-// reboot does not bring it back after an intentional stop.
-func (s *Sandbox) StopDaemon(ctx context.Context, agent, id string) (DaemonInfo, error) {
-	name, err := s.daemonContainerName(ctx, agent, id)
+// StopDaemon clears restart policy, stops, and removes the container so
+// it will not return on host reboot and no longer counts toward the cap.
+func (s *Sandbox) StopDaemon(ctx context.Context, id string) (DaemonInfo, error) {
+	info, err := s.daemonInfo(ctx, id)
 	if err != nil {
 		return DaemonInfo{}, err
 	}
+	name := info.Container
 	update := exec.CommandContext(ctx, "docker", "update", "--restart=no", name)
 	if out, err := update.CombinedOutput(); err != nil {
 		return DaemonInfo{}, fmt.Errorf("docker update failed: %w\nOutput: %s", err, string(out))
@@ -207,33 +279,37 @@ func (s *Sandbox) StopDaemon(ctx context.Context, agent, id string) (DaemonInfo,
 	if out, err := stop.CombinedOutput(); err != nil {
 		return DaemonInfo{}, fmt.Errorf("docker stop failed: %w\nOutput: %s", err, string(out))
 	}
-	infos, err := s.ListDaemons(ctx, agent)
+	rm := exec.CommandContext(ctx, "docker", "rm", name)
+	if out, err := rm.CombinedOutput(); err != nil {
+		return DaemonInfo{}, fmt.Errorf("docker rm failed: %w\nOutput: %s", err, string(out))
+	}
+	info.Status = "removed"
+	return info, nil
+}
+
+func (s *Sandbox) daemonInfo(ctx context.Context, id string) (DaemonInfo, error) {
+	id = strings.TrimSpace(id)
+	if id == "" {
+		return DaemonInfo{}, fmt.Errorf("daemon_id is required")
+	}
+	infos, err := s.ListDaemons(ctx)
 	if err != nil {
-		return DaemonInfo{ID: id, Container: name, Status: "stopped"}, nil
+		return DaemonInfo{}, err
 	}
 	for _, info := range infos {
 		if info.ID == id {
 			return info, nil
 		}
 	}
-	return DaemonInfo{ID: id, Container: name, Status: "stopped"}, nil
+	return DaemonInfo{}, fmt.Errorf("daemon %q not found", id)
 }
 
-func (s *Sandbox) daemonContainerName(ctx context.Context, agent, id string) (string, error) {
-	id = strings.TrimSpace(id)
-	if id == "" {
-		return "", fmt.Errorf("daemon_id is required")
-	}
-	infos, err := s.ListDaemons(ctx, agent)
+func (s *Sandbox) daemonContainerName(ctx context.Context, id string) (string, error) {
+	info, err := s.daemonInfo(ctx, id)
 	if err != nil {
 		return "", err
 	}
-	for _, info := range infos {
-		if info.ID == id {
-			return info.Container, nil
-		}
-	}
-	return "", fmt.Errorf("daemon %q not found for agent %q", id, agent)
+	return info.Container, nil
 }
 
 // daemonScriptFilename requires command to reference /scripts/<flat-file>

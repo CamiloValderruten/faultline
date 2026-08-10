@@ -191,16 +191,19 @@ type SandboxConfig struct {
 }
 
 // DaemonsConfig holds long-lived Docker daemon settings. Requires
-// [sandbox] enabled. Daemons are labeled with faultline.agent so
-// daemon_list rediscovers them after Faultline or host restarts.
+// [sandbox] enabled. Ownership is a UUID stored in sandbox/.daemon-owner
+// (created on first enable) so daemon_list rediscovers containers after
+// Faultline or host restarts without a TOML agent name.
 type DaemonsConfig struct {
-	Enabled bool   `toml:"enabled"`
-	Agent   string `toml:"agent"` // ownership id, e.g. "coco"
+	Enabled bool `toml:"enabled"`
+	// Max is the maximum number of daemon containers this agent may
+	// keep. Zero falls back to 5 when enabled.
+	Max int `toml:"max"`
 }
 
 // Active reports whether daemon tools should be wired.
 func (d DaemonsConfig) Active() bool {
-	return d.Enabled && strings.TrimSpace(d.Agent) != ""
+	return d.Enabled
 }
 
 // LimitsConfig holds configurable size caps for content the agent sees in
@@ -715,7 +718,7 @@ func Default() *Config {
 		},
 		Daemons: DaemonsConfig{
 			Enabled: false,
-			Agent:   "",
+			Max:     5,
 		},
 		Limits: LimitsConfig{
 			// Defaults are substantially larger than the original
@@ -914,18 +917,11 @@ func Load(path string) (*Config, error) {
 	}
 
 	if cfg.Daemons.Enabled {
-		agent := strings.ToLower(strings.TrimSpace(cfg.Daemons.Agent))
-		if agent == "" {
-			return nil, fmt.Errorf("[daemons] agent is required when enabled")
-		}
-		for _, r := range agent {
-			if (r < 'a' || r > 'z') && (r < '0' || r > '9') && r != '-' {
-				return nil, fmt.Errorf("[daemons] agent must be lowercase letters, digits, and dashes")
-			}
-		}
-		cfg.Daemons.Agent = agent
 		if !cfg.Sandbox.Enabled {
 			return nil, fmt.Errorf("[daemons] requires [sandbox] enabled")
+		}
+		if cfg.Daemons.Max <= 0 {
+			cfg.Daemons.Max = 5
 		}
 	}
 

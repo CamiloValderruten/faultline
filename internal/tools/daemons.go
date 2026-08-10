@@ -11,7 +11,7 @@ import (
 )
 
 func (te *Executor) daemonsEnabled() bool {
-	return te.sandbox != nil && te.daemonAgent != ""
+	return te.sandbox != nil && te.sandbox.DaemonOwner() != ""
 }
 
 func (te *Executor) daemonToolDefs() []llm.Tool {
@@ -55,7 +55,7 @@ func (te *Executor) daemonToolDefs() []llm.Tool {
 			Type: llm.ToolTypeFunction,
 			Function: &llm.FunctionDef{
 				Name: "daemon_list",
-				Description: "List this agent's daemon containers via Docker labels (faultline.agent). " +
+				Description: "List this agent's daemon containers via Docker labels (faultline.owner). " +
 					"Works after Faultline restarts and host reboots. Includes description and status.",
 				Parameters: map[string]interface{}{
 					"type":       "object",
@@ -88,8 +88,8 @@ func (te *Executor) daemonToolDefs() []llm.Tool {
 			Type: llm.ToolTypeFunction,
 			Function: &llm.FunctionDef{
 				Name: "daemon_stop",
-				Description: "Intentionally stop a daemon: clears restart policy then docker stop " +
-					"so it will not return on host reboot.",
+				Description: "Intentionally stop a daemon: clears restart policy, stops, and removes the " +
+					"container so it will not return on host reboot and frees a slot toward the max cap.",
 				Parameters: map[string]interface{}{
 					"type": "object",
 					"properties": map[string]interface{}{
@@ -124,7 +124,7 @@ func (te *Executor) daemonSpawn(ctx context.Context, args string) string {
 	if utf8.RuneCountInString(p.Description) > 512 {
 		return "Error: description exceeds 512 characters"
 	}
-	info, err := te.sandbox.StartDaemon(ctx, te.daemonAgent, p.Name, p.Description, p.Command, p.Env)
+	info, err := te.sandbox.StartDaemon(ctx, p.Name, p.Description, p.Command, p.Env)
 	if err != nil {
 		return fmt.Sprintf("Error: %v", err)
 	}
@@ -139,7 +139,7 @@ func (te *Executor) daemonList(ctx context.Context) string {
 	if !te.daemonsEnabled() {
 		return "Error: daemons not enabled"
 	}
-	infos, err := te.sandbox.ListDaemons(ctx, te.daemonAgent)
+	infos, err := te.sandbox.ListDaemons(ctx)
 	if err != nil {
 		return fmt.Sprintf("Error: %v", err)
 	}
@@ -164,7 +164,7 @@ func (te *Executor) daemonFetch(ctx context.Context, args string) string {
 	if err := json.Unmarshal([]byte(args), &p); err != nil {
 		return fmt.Sprintf("Error: invalid arguments: %v", err)
 	}
-	out, err := te.sandbox.FetchDaemonLogs(ctx, te.daemonAgent, p.DaemonID, p.Tail)
+	out, err := te.sandbox.FetchDaemonLogs(ctx, p.DaemonID, p.Tail)
 	if err != nil {
 		return fmt.Sprintf("Error: %v", err)
 	}
@@ -184,7 +184,7 @@ func (te *Executor) daemonStop(ctx context.Context, args string) string {
 	if err := json.Unmarshal([]byte(args), &p); err != nil {
 		return fmt.Sprintf("Error: invalid arguments: %v", err)
 	}
-	info, err := te.sandbox.StopDaemon(ctx, te.daemonAgent, p.DaemonID)
+	info, err := te.sandbox.StopDaemon(ctx, p.DaemonID)
 	if err != nil {
 		return fmt.Sprintf("Error: %v", err)
 	}

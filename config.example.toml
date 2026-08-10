@@ -186,16 +186,16 @@ memory_limit = "512m"
 # ---------------------------------------------------------------------------
 # [daemons] — long-lived Docker daemons owned by this agent.
 #
-# Requires [sandbox] enabled. Containers are named
-# faultline-daemon-<agent>-<id>, labeled with faultline.agent / description,
-# and started with --restart unless-stopped so they survive Faultline exits
-# and host reboots. daemon_list rediscovers them via Docker labels.
-# Commands may only run flat scripts under /scripts/.
+# Requires [sandbox] enabled. On first enable, Faultline writes a UUID to
+# sandbox/.daemon-owner and labels containers with faultline.owner=<uuid>
+# so daemon_list rediscovers them after Faultline exits or host reboots.
+# Containers use --restart unless-stopped. Commands may only run flat
+# scripts under /scripts/.
 # ---------------------------------------------------------------------------
 [daemons]
 enabled = false
-# Ownership id baked into container name + labels (e.g. "coco", "arlo").
-agent = ""
+# Max concurrent daemon containers (stop frees a slot). Default 5.
+max = 5
 
 # ---------------------------------------------------------------------------
 # [email] — optional IMAP email reading.

@@ -160,11 +160,16 @@ func main() {
 		logger.Info("sandbox not configured, Python execution disabled")
 	}
 
-	daemonAgent := ""
 	if cfg.Daemons.Active() {
-		// Load already requires sandbox.enabled when daemons.enabled.
-		daemonAgent = cfg.Daemons.Agent
-		logger.Info("daemons enabled", "agent", daemonAgent)
+		if sb == nil {
+			logger.Error("daemons requires sandbox")
+			os.Exit(1)
+		}
+		if err := sb.EnableDaemons(cfg.Daemons.Max); err != nil {
+			logger.Error("init daemons", "error", err)
+			os.Exit(1)
+		}
+		logger.Info("daemons enabled", "owner", sb.DaemonOwner(), "max", cfg.Daemons.Max)
 	}
 
 	chatLog, err := openai.NewChatLogger(cfg.Log.Dir)
@@ -476,7 +481,6 @@ func main() {
 		Voice:                voiceOut,
 		Files:                fileOut,
 		Sandbox:              sb,
-		DaemonAgent:          daemonAgent,
 		Email:                email,
 		Kobold:               kb,
 		Updater:              updater,

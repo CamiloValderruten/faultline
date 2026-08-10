@@ -1342,7 +1342,6 @@ type Executor struct {
 	voice               voiceSender         // optional; Discord+Deepgram SendVoice
 	files               fileSender          // optional; Discord SendFile
 	sandbox             *docker.Sandbox
-	daemonAgent         string // non-empty enables daemon_* tools (ownership label)
 	email               *config.EmailConfig
 	kobold              *kobold.Client  // optional; nil means no perf info in context_status
 	updater             *update.Updater // optional; always non-nil but Enabled() may be false
@@ -1414,7 +1413,6 @@ type Deps struct {
 	Voice                voiceSender
 	Files                fileSender
 	Sandbox              *docker.Sandbox
-	DaemonAgent          string // when set with Sandbox, advertises daemon_* tools
 	Email                *config.EmailConfig
 	Kobold               *kobold.Client
 	Updater              *update.Updater
@@ -1495,7 +1493,6 @@ func New(deps Deps) *Executor {
 		voice:               deps.Voice,
 		files:               deps.Files,
 		sandbox:             deps.Sandbox,
-		daemonAgent:         deps.DaemonAgent,
 		email:               deps.Email,
 		kobold:              deps.Kobold,
 		updater:             deps.Updater,

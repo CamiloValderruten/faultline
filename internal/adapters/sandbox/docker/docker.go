@@ -37,6 +37,11 @@ type Sandbox struct {
 	uid         int        // host uid for --user flag
 	gid         int        // host gid for --user flag
 
+	// daemonOwner / daemonMax are set by EnableDaemons when [daemons]
+	// is enabled. Empty owner means daemon tools stay offline.
+	daemonOwner string
+	daemonMax   int
+
 	// outputLimit caps stdout/stderr returned to the agent for both
 	// script execution and shell exec. Zero or negative disables the
 	// cap. Set via SetOutputLimit after construction so callers can
