@@ -128,6 +128,10 @@ var subagentForbidden = map[string]struct{}{
 	"peer_send":                 {},
 	"peer_inbox":                {},
 	"peer_read":                 {},
+	"daemon_spawn":              {},
+	"daemon_list":               {},
+	"daemon_fetch":              {},
+	"daemon_stop":               {},
 	"subagent_run":              {},
 	"subagent_spawn":            {},
 	"subagent_wait":             {},
@@ -945,6 +949,10 @@ func (te *Executor) buildAllToolDefs() []llm.Tool {
 		})
 	}
 
+	if te.daemonsEnabled() {
+		tools = append(tools, te.daemonToolDefs()...)
+	}
+
 	if te.sandbox != nil {
 		tools = append(tools,
 			llm.Tool{
@@ -1334,6 +1342,7 @@ type Executor struct {
 	voice               voiceSender         // optional; Discord+Deepgram SendVoice
 	files               fileSender          // optional; Discord SendFile
 	sandbox             *docker.Sandbox
+	daemonAgent         string // non-empty enables daemon_* tools (ownership label)
 	email               *config.EmailConfig
 	kobold              *kobold.Client  // optional; nil means no perf info in context_status
 	updater             *update.Updater // optional; always non-nil but Enabled() may be false
@@ -1405,6 +1414,7 @@ type Deps struct {
 	Voice                voiceSender
 	Files                fileSender
 	Sandbox              *docker.Sandbox
+	DaemonAgent          string // when set with Sandbox, advertises daemon_* tools
 	Email                *config.EmailConfig
 	Kobold               *kobold.Client
 	Updater              *update.Updater
@@ -1485,6 +1495,7 @@ func New(deps Deps) *Executor {
 		voice:               deps.Voice,
 		files:               deps.Files,
 		sandbox:             deps.Sandbox,
+		daemonAgent:         deps.DaemonAgent,
 		email:               deps.Email,
 		kobold:              deps.Kobold,
 		updater:             deps.Updater,
@@ -1738,6 +1749,14 @@ func (te *Executor) dispatch(ctx context.Context, call llm.ToolCall) string {
 		return te.sandboxListPackages()
 	case "sandbox_shell":
 		return te.sandboxShell(ctx, args)
+	case "daemon_spawn":
+		return te.daemonSpawn(ctx, args)
+	case "daemon_list":
+		return te.daemonList(ctx)
+	case "daemon_fetch":
+		return te.daemonFetch(ctx, args)
+	case "daemon_stop":
+		return te.daemonStop(ctx, args)
 	// Skill tools (https://agentskills.io)
 	case "skill_activate":
 		return te.skillActivate(args)

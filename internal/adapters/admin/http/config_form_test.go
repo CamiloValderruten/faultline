@@ -15,7 +15,7 @@ func TestBuildConfigForm_CoversEverySection(t *testing.T) {
 	form := BuildConfigForm(cfg)
 
 	wantSections := []string{
-		"api", "agent", "telegram", "discord", "deepgram", "log", "sandbox", "email",
+		"api", "agent", "telegram", "discord", "deepgram", "log", "sandbox", "daemons", "email",
 		"limits", "update", "mcp", "oauth", "embeddings", "skills",
 		"subagent", "admin", "peers", "publish",
 	}

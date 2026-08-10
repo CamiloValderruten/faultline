@@ -19,6 +19,7 @@ type Config struct {
 	Deepgram DeepgramConfig `toml:"deepgram"`
 	Log      LogConfig      `toml:"log"`
 	Sandbox  SandboxConfig  `toml:"sandbox"`
+	Daemons  DaemonsConfig  `toml:"daemons"`
 	Email    EmailConfig    `toml:"email"`
 	Limits   LimitsConfig   `toml:"limits"`
 	Update   UpdateConfig   `toml:"update"`
@@ -182,10 +183,24 @@ type SandboxConfig struct {
 	Network     bool     `toml:"network"`
 	MemoryLimit string   `toml:"memory_limit"`
 	// Env is injected as docker -e flags into every sandbox container
-	// (sandbox_execute, sandbox_shell, skill_execute, MCP stdio). Use
-	// GH_TOKEN so the in-container gh CLI (and git via `gh auth setup-git`)
-	// can authenticate. Values are never written to debug logs.
+	// (sandbox_execute, sandbox_shell, skill_execute, MCP stdio, daemons).
+	// Use GH_TOKEN so the in-container gh CLI (and git via
+	// `gh auth setup-git`) can authenticate. Values are never written
+	// to debug logs.
 	Env map[string]string `toml:"env"`
+}
+
+// DaemonsConfig holds long-lived Docker daemon settings. Requires
+// [sandbox] enabled. Daemons are labeled with faultline.agent so
+// daemon_list rediscovers them after Faultline or host restarts.
+type DaemonsConfig struct {
+	Enabled bool   `toml:"enabled"`
+	Agent   string `toml:"agent"` // ownership id, e.g. "coco"
+}
+
+// Active reports whether daemon tools should be wired.
+func (d DaemonsConfig) Active() bool {
+	return d.Enabled && strings.TrimSpace(d.Agent) != ""
 }
 
 // LimitsConfig holds configurable size caps for content the agent sees in
@@ -698,6 +713,10 @@ func Default() *Config {
 			Network:     false,
 			MemoryLimit: "512m",
 		},
+		Daemons: DaemonsConfig{
+			Enabled: false,
+			Agent:   "",
+		},
 		Limits: LimitsConfig{
 			// Defaults are substantially larger than the original
 			// hard-coded values (2000 / 1500 / 24000) so the agent
@@ -891,6 +910,22 @@ func Load(path string) (*Config, error) {
 			if strings.TrimSpace(a.Name) == "" || strings.TrimSpace(a.URL) == "" || strings.TrimSpace(a.Token) == "" {
 				return nil, fmt.Errorf("[peers.agents.%d] name, url, and token are required", i)
 			}
+		}
+	}
+
+	if cfg.Daemons.Enabled {
+		agent := strings.ToLower(strings.TrimSpace(cfg.Daemons.Agent))
+		if agent == "" {
+			return nil, fmt.Errorf("[daemons] agent is required when enabled")
+		}
+		for _, r := range agent {
+			if (r < 'a' || r > 'z') && (r < '0' || r > '9') && r != '-' {
+				return nil, fmt.Errorf("[daemons] agent must be lowercase letters, digits, and dashes")
+			}
+		}
+		cfg.Daemons.Agent = agent
+		if !cfg.Sandbox.Enabled {
+			return nil, fmt.Errorf("[daemons] requires [sandbox] enabled")
 		}
 	}
 

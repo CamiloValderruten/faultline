@@ -160,6 +160,13 @@ func main() {
 		logger.Info("sandbox not configured, Python execution disabled")
 	}
 
+	daemonAgent := ""
+	if cfg.Daemons.Active() {
+		// Load already requires sandbox.enabled when daemons.enabled.
+		daemonAgent = cfg.Daemons.Agent
+		logger.Info("daemons enabled", "agent", daemonAgent)
+	}
+
 	chatLog, err := openai.NewChatLogger(cfg.Log.Dir)
 	if err != nil {
 		logger.Warn("could not open chat transcript log; continuing without it",
@@ -469,6 +476,7 @@ func main() {
 		Voice:                voiceOut,
 		Files:                fileOut,
 		Sandbox:              sb,
+		DaemonAgent:          daemonAgent,
 		Email:                email,
 		Kobold:               kb,
 		Updater:              updater,

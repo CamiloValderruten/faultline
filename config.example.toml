@@ -175,13 +175,28 @@ network = false
 memory_limit = "512m"
 
 # Extra environment variables injected into every sandbox container
-# (sandbox_execute, sandbox_shell, skill_execute, MCP stdio). Values are
+# (sandbox_execute, sandbox_shell, skill_execute, MCP stdio, daemons). Values are
 # never written to debug logs. GH_TOKEN is the gh CLI's default auth env
 # var; with network = true the agent can run `gh ...` and, after
 # `gh auth setup-git`, use git HTTPS with the same token.
 #
 # [sandbox.env]
 # GH_TOKEN = "ghp_..."
+
+# ---------------------------------------------------------------------------
+# [daemons] — long-lived Docker daemons owned by this agent.
+#
+# Requires [sandbox] enabled. Containers are named
+# faultline-daemon-<agent>-<id>, labeled with faultline.agent / description,
+# and started with --restart unless-stopped so they survive Faultline exits
+# and host reboots. daemon_list rediscovers them via Docker labels.
+# Commands may only run flat scripts under /scripts/.
+# ---------------------------------------------------------------------------
+[daemons]
+enabled = false
+# Ownership id baked into container name + labels (e.g. "coco", "arlo").
+agent = ""
+
 # ---------------------------------------------------------------------------
 # [email] — optional IMAP email reading.
 #
