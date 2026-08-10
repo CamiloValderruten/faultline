@@ -18,7 +18,7 @@ const (
 	alertsEnvVar    = "FAULTLINE_ALERTS"
 	alertsPathInCtr = "/work/alerts.jsonl"
 	alertPollEvery  = time.Second
-	maxAlertsPerMin = 20
+	maxAlertsPerMin = 4
 )
 
 func (s *Sandbox) startDaemonAlertWatch() {

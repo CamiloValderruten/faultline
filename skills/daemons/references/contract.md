@@ -25,5 +25,5 @@ Print JSONL (or plain text) to **stdout**. Retrieve with `daemon_fetch`. Heartbe
 ## Limits
 
 - Max concurrent daemons: config `[daemons].max` (default 5).
-- Alert rate limit: ~20 injections per minute per daemon.
+- Alert rate limit: ~4 injections per minute per daemon.
 - Description max 512 characters, single line, required at spawn.

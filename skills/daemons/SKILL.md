@@ -66,7 +66,7 @@ def notify(message, **meta):
 
 The harness polls that file, injects `[Daemon alert from …]` into the
 conversation (like Telegram/peers), and **interrupts sleep**. Rate-limited
-(~20/min/daemon). Offsets are remembered so restarts do not replay old lines.
+(~4/min/daemon). Offsets are remembered so restarts do not replay old lines.
 
 Do **not** write heartbeats to alerts.jsonl — use stdout for those.
 
