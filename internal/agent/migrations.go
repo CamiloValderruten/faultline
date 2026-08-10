@@ -238,7 +238,10 @@ func (a *Agent) buildFreshSystemMessage(prompts map[string]string) llm.Message {
 		}
 	}
 	body := prompt.BuildCycleContext(
-		prompts["system"], memories, skillCatalog, subagentCatalog,
+		prompts["system"],
+		prompts["identity-core"],
+		prompts["agent"],
+		memories, skillCatalog, subagentCatalog,
 		a.gatherCollaboratorGuide(),
 		time.Now(), a.cfg.Limits.RecentMemoryChars,
 	)

@@ -38,6 +38,9 @@ var (
 	//go:embed templates/identity-core.md
 	defaultIdentityCore string
 
+	//go:embed templates/agent.md
+	defaultAgent string
+
 	//go:embed templates/changelog.md
 	defaultChangelog string
 )
@@ -131,6 +134,10 @@ func init() {
 			path:         "identity/core.md",
 			defaultValue: defaultIdentityCore,
 		},
+		"agent": {
+			path:         "prompts/agent.md",
+			defaultValue: defaultAgent,
+		},
 		"changelog": {
 			path:         "prompts/changelog.md",
 			defaultValue: defaultChangelog,
@@ -180,30 +187,39 @@ func Render(template string, now time.Time) string {
 	return result
 }
 
-// BuildCycleContext assembles the full system message with recent
-// memories and (optionally) the skill catalog. Both sections are
-// omitted entirely when their input slice is empty -- no empty
-// headers in the rendered prompt.
+// BuildCycleContext assembles the full system message:
 //
-// memoryCharLimit caps the per-entry memory excerpt size; when
-// exceeded, a retrieval hint is appended pointing the agent at
-// memory_read. A non-positive limit disables the cap.
+//	system prompt (shared rulebook)
+//	---
+//	Current Time
+//	## Identity          (identity/core.md — who; always when non-empty)
+//	## Agent Overlay     (prompts/agent.md — personal; when non-empty)
+//	Collaborator Channel (optional)
+//	## Available Skills  (optional; System / User subsections)
+//	## Available Subagent Profiles (optional)
+//	## Recent Memories   (optional; searchable files, not personality)
+//
+// identity and agentOverlay are omitted when blank. charLimit caps
+// identity, overlay, and each recent-memory excerpt (non-positive =
+// no cap); truncated sections point at memory_read.
 //
 // skillCatalog, when non-empty, is rendered as an "## Available
 // Skills" section with a brief instruction telling the agent to call
-// skill_activate when a task matches a skill's description. Each
-// entry costs ~50-100 tokens, matching the spec's tier-1 disclosure.
+// skill_activate when a task matches a skill's description.
 //
 // collaboratorGuide, when non-empty, is rendered as a "## Collaborator
 // Channel" section describing the active messaging surface (Telegram /
 // Discord). Supplied by the operator adapter at runtime — not from
 // prompt files.
-func BuildCycleContext(systemPrompt string, memories []bm25.Result, skillCatalog []skills.Skill, subagentCatalog []subagent.Catalog, collaboratorGuide string, now time.Time, memoryCharLimit int) string {
+func BuildCycleContext(systemPrompt, identity, agentOverlay string, memories []bm25.Result, skillCatalog []skills.Skill, subagentCatalog []subagent.Catalog, collaboratorGuide string, now time.Time, charLimit int) string {
 	var sb strings.Builder
 
 	sb.WriteString(systemPrompt)
 	sb.WriteString("\n\n---\n\n")
 	fmt.Fprintf(&sb, "**Current Time**: %s\n\n", now.Format(time.RFC1123))
+
+	writeCappedSection(&sb, "Identity", "identity/core.md", identity, charLimit)
+	writeCappedSection(&sb, "Agent Overlay", "prompts/agent.md", agentOverlay, charLimit)
 
 	if guide := strings.TrimSpace(collaboratorGuide); guide != "" {
 		sb.WriteString(guide)
@@ -223,16 +239,18 @@ func BuildCycleContext(systemPrompt string, memories []bm25.Result, skillCatalog
 
 	if len(memories) > 0 {
 		sb.WriteString("## Recent Memories\n\n")
+		sb.WriteString("Recent files for orientation only. They are not your identity — ")
+		sb.WriteString("search or read deeper with memory_search / memory_read when needed.\n\n")
 		for _, m := range memories {
 			fmt.Fprintf(&sb, "### %s\n", m.Path)
 			content := m.Content
 			total := len(content)
-			if memoryCharLimit > 0 && total > memoryCharLimit {
-				content = content[:memoryCharLimit]
+			if charLimit > 0 && total > charLimit {
+				content = content[:charLimit]
 				sb.WriteString(content)
 				fmt.Fprintf(&sb,
 					"\n\n*[truncated: showing first %d of %d chars; call `memory_read` with path=%q to read the full file, or with offset=%d (line-based) to continue from where this preview ends]*",
-					memoryCharLimit, total, m.Path, lineCountFor(content)+1)
+					charLimit, total, m.Path, lineCountFor(content)+1)
 			} else {
 				sb.WriteString(content)
 			}
@@ -241,6 +259,27 @@ func BuildCycleContext(systemPrompt string, memories []bm25.Result, skillCatalog
 	}
 
 	return sb.String()
+}
+
+// writeCappedSection writes "## Title" + body when body is non-empty
+// after trim. Applies the same char cap / memory_read hint as recent
+// memories.
+func writeCappedSection(sb *strings.Builder, title, path, body string, charLimit int) {
+	body = strings.TrimSpace(body)
+	if body == "" {
+		return
+	}
+	fmt.Fprintf(sb, "## %s\n\n", title)
+	total := len(body)
+	if charLimit > 0 && total > charLimit {
+		sb.WriteString(body[:charLimit])
+		fmt.Fprintf(sb,
+			"\n\n*[truncated: showing first %d of %d chars; call `memory_read` with path=%q for the full file]*\n\n",
+			charLimit, total, path)
+		return
+	}
+	sb.WriteString(body)
+	sb.WriteString("\n\n")
 }
 
 // writeSubagentCatalog renders the subagent profile disclosure

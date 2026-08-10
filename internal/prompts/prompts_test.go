@@ -241,7 +241,7 @@ func TestLoadAll(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	for _, want := range []string{"system", "compaction", "cycle-start", "continue", "shutdown", "identity-core", "changelog"} {
+	for _, want := range []string{"system", "compaction", "cycle-start", "continue", "shutdown", "identity-core", "agent", "changelog"} {
 		if _, ok := prompts[want]; !ok {
 			t.Errorf("LoadAll missing prompt %q", want)
 		}
@@ -264,5 +264,8 @@ func TestLoadAllSeedsAutonomyConventions(t *testing.T) {
 	}
 	if _, err := m.Read("prompts/changelog.md"); err != nil {
 		t.Errorf("prompts/changelog.md not seeded: %v", err)
+	}
+	if _, err := m.Read("prompts/agent.md"); err != nil {
+		t.Errorf("prompts/agent.md not seeded: %v", err)
 	}
 }
