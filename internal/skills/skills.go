@@ -41,6 +41,11 @@ type Skill struct {
 	// SkillMDPath is the absolute path to the skill's SKILL.md.
 	SkillMDPath string
 
+	// Source is where the skill was loaded from: SourceSystem (shipped /
+	// read-only root) or SourceUser (operator / skill_install root).
+	// Empty means unspecified (legacy / tests).
+	Source string
+
 	// Diagnostics is a list of human-readable warnings raised during
 	// parsing. Populated when the skill is loaded leniently (e.g.
 	// name doesn't match directory, name has invalid characters but
@@ -48,16 +53,23 @@ type Skill struct {
 	Diagnostics []string
 }
 
+// Skill source labels written into Skill.Source at load time.
+const (
+	SourceSystem = "system"
+	SourceUser   = "user"
+)
+
 // Catalog is a small projection of a Skill suitable for the system
-// prompt's tier-1 disclosure. Just name + description.
+// prompt's tier-1 disclosure. Just name + description + source.
 type Catalog struct {
 	Name        string
 	Description string
+	Source      string
 }
 
 // Catalog returns the tier-1 projection of this skill.
 func (s Skill) ToCatalog() Catalog {
-	return Catalog{Name: s.Name, Description: s.Description}
+	return Catalog{Name: s.Name, Description: s.Description, Source: s.Source}
 }
 
 // MaxNameLen, MaxDescriptionLen, and MaxCompatLen are the spec's caps.

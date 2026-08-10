@@ -180,7 +180,7 @@ func TestSkillInstall_Tarball(t *testing.T) {
 	defer srv.Close()
 
 	// Construct a real Store + Executor against the temp skills root.
-	store, err := skillsfs.New(skillsRoot, silentTestLogger())
+	store, err := skillsfs.New(skillsRoot, "", silentTestLogger())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -211,7 +211,7 @@ func TestSkillInstall_RejectsExisting(t *testing.T) {
 	_ = os.WriteFile(filepath.Join(skillsRoot, "duplicate", "SKILL.md"),
 		[]byte("---\nname: duplicate\ndescription: x.\n---\n"), 0o644)
 
-	store, _ := skillsfs.New(skillsRoot, silentTestLogger())
+	store, _ := skillsfs.New(skillsRoot, "", silentTestLogger())
 	te := New(Deps{
 		Skills:              store,
 		SkillInstallEnabled: true,
@@ -227,7 +227,7 @@ func TestSkillInstall_RejectsExisting(t *testing.T) {
 
 func TestSkillInstall_DisabledByDefault(t *testing.T) {
 	skillsRoot := t.TempDir()
-	store, _ := skillsfs.New(skillsRoot, silentTestLogger())
+	store, _ := skillsfs.New(skillsRoot, "", silentTestLogger())
 	// install_enabled = false
 	te := New(Deps{
 		Skills:              store,
@@ -264,7 +264,7 @@ func TestSkillInstall_AuditDeniesAbortsInstall(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	store, _ := skillsfs.New(skillsRoot, silentTestLogger())
+	store, _ := skillsfs.New(skillsRoot, "", silentTestLogger())
 	spawn := func(ctx context.Context, workID string, p subagent.Profile, prompt string, maxTurns int) subagent.Report {
 		return subagent.Report{Text: "DENY: scripts/run.py exfiltrates AWS creds.\n\nClear evidence."}
 	}
@@ -310,7 +310,7 @@ func TestSkillInstall_AuditApprovesProceeds(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	store, _ := skillsfs.New(skillsRoot, silentTestLogger())
+	store, _ := skillsfs.New(skillsRoot, "", silentTestLogger())
 	spawn := func(ctx context.Context, workID string, p subagent.Profile, prompt string, maxTurns int) subagent.Report {
 		return subagent.Report{Text: "APPROVE: trivial skill, no issues.\n\nNothing concerning."}
 	}
@@ -336,7 +336,7 @@ func TestSkillInstall_AuditApprovesProceeds(t *testing.T) {
 
 func TestSkillInstall_RejectsInvalidName(t *testing.T) {
 	skillsRoot := t.TempDir()
-	store, _ := skillsfs.New(skillsRoot, silentTestLogger())
+	store, _ := skillsfs.New(skillsRoot, "", silentTestLogger())
 	te := New(Deps{
 		Skills:              store,
 		SkillInstallEnabled: true,

@@ -34,7 +34,7 @@ func TestLoadDisabledFromFile_MissingFileIsOK(t *testing.T) {
 	root := t.TempDir()
 	fakeSkillTree(t, root, "alpha", "beta")
 
-	store, err := New(root, newQuietLogger())
+	store, err := New(root, "", newQuietLogger())
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
@@ -53,7 +53,7 @@ func TestLoadDisabledFromFile_HidesFromList(t *testing.T) {
 	root := t.TempDir()
 	fakeSkillTree(t, root, "alpha", "beta", "gamma")
 
-	store, err := New(root, newQuietLogger())
+	store, err := New(root, "", newQuietLogger())
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
@@ -100,7 +100,7 @@ func TestSetEnabled_PersistsAndRoundTrips(t *testing.T) {
 	root := t.TempDir()
 	fakeSkillTree(t, root, "alpha", "beta")
 
-	store, err := New(root, newQuietLogger())
+	store, err := New(root, "", newQuietLogger())
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
@@ -131,7 +131,7 @@ func TestSetEnabled_PersistsAndRoundTrips(t *testing.T) {
 
 	// Re-load from disk into a fresh Store and confirm the
 	// persisted state survived.
-	store2, err := New(root, newQuietLogger())
+	store2, err := New(root, "", newQuietLogger())
 	if err != nil {
 		t.Fatalf("New (second): %v", err)
 	}
@@ -162,7 +162,7 @@ func TestSetEnabled_UnknownSkill(t *testing.T) {
 	root := t.TempDir()
 	fakeSkillTree(t, root, "alpha")
 
-	store, err := New(root, newQuietLogger())
+	store, err := New(root, "", newQuietLogger())
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
@@ -178,7 +178,7 @@ func TestLoadDisabledFromFile_BadTOML(t *testing.T) {
 	root := t.TempDir()
 	fakeSkillTree(t, root, "alpha")
 
-	store, err := New(root, newQuietLogger())
+	store, err := New(root, "", newQuietLogger())
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}

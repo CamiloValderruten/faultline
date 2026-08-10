@@ -6,6 +6,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/CamiloValderruten/faultline/internal/skills"
 )
 
 // silentLogger returns a slog.Logger that discards everything. Used in
@@ -33,7 +35,7 @@ func TestStore_DiscoversSkills(t *testing.T) {
 	writeSkill(t, root, "pdf-processing", "---\nname: pdf-processing\ndescription: Handle PDFs.\n---\n\nBody here.\n")
 	writeSkill(t, root, "data-analysis", "---\nname: data-analysis\ndescription: Analyze datasets.\n---\n")
 
-	s, err := New(root, silentLogger())
+	s, err := New(root, "", silentLogger())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -60,7 +62,7 @@ func TestStore_SkipsMalformedSkills(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	s, err := New(root, silentLogger())
+	s, err := New(root, "", silentLogger())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -72,7 +74,7 @@ func TestStore_SkipsMalformedSkills(t *testing.T) {
 
 func TestStore_MissingRootIsNotError(t *testing.T) {
 	root := filepath.Join(t.TempDir(), "does-not-exist")
-	s, err := New(root, silentLogger())
+	s, err := New(root, "", silentLogger())
 	if err != nil {
 		t.Fatalf("New on missing root: %v", err)
 	}
@@ -85,7 +87,7 @@ func TestStore_NameMismatchUsesDirectoryNameWithDiagnostic(t *testing.T) {
 	root := t.TempDir()
 	writeSkill(t, root, "pdf-processing", "---\nname: something-else\ndescription: PDFs.\n---\n")
 
-	s, err := New(root, silentLogger())
+	s, err := New(root, "", silentLogger())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -102,7 +104,7 @@ func TestStore_NameMismatchUsesDirectoryNameWithDiagnostic(t *testing.T) {
 }
 
 func TestStore_GetNotFound(t *testing.T) {
-	s, _ := New(t.TempDir(), silentLogger())
+	s, _ := New(t.TempDir(), "", silentLogger())
 	if _, err := s.Get("nope"); err == nil {
 		t.Error("Get(nope) returned nil error")
 	}
@@ -115,7 +117,7 @@ func TestStore_ReadResource(t *testing.T) {
 	_ = os.MkdirAll(scriptsDir, 0755)
 	_ = os.WriteFile(filepath.Join(scriptsDir, "extract.py"), []byte("print('hi')\n"), 0644)
 
-	s, _ := New(root, silentLogger())
+	s, _ := New(root, "", silentLogger())
 	got, err := s.Read("with-resources", "scripts/extract.py")
 	if err != nil {
 		t.Fatalf("Read: %v", err)
@@ -129,7 +131,7 @@ func TestStore_ReadRejectsPathEscape(t *testing.T) {
 	root := t.TempDir()
 	writeSkill(t, root, "my-skill", "---\nname: my-skill\ndescription: x.\n---\n")
 
-	s, _ := New(root, silentLogger())
+	s, _ := New(root, "", silentLogger())
 	for _, bad := range []string{
 		"../../etc/passwd",
 		"/etc/passwd",
@@ -160,7 +162,7 @@ func TestStore_ResourcesEnumeration(t *testing.T) {
 		_ = os.WriteFile(full, []byte(p.content), 0644)
 	}
 
-	s, _ := New(root, silentLogger())
+	s, _ := New(root, "", silentLogger())
 	res, truncated, err := s.Resources("skill-x")
 	if err != nil {
 		t.Fatalf("Resources: %v", err)
@@ -182,7 +184,7 @@ func TestStore_ResourcesEnumeration(t *testing.T) {
 func TestStore_Reload_PicksUpNewSkills(t *testing.T) {
 	root := t.TempDir()
 	writeSkill(t, root, "first", "---\nname: first\ndescription: x.\n---\n")
-	s, _ := New(root, silentLogger())
+	s, _ := New(root, "", silentLogger())
 	if got := s.List(); len(got) != 1 {
 		t.Fatalf("initial: got %d", len(got))
 	}
@@ -193,5 +195,43 @@ func TestStore_Reload_PicksUpNewSkills(t *testing.T) {
 	}
 	if got := s.List(); len(got) != 2 {
 		t.Errorf("after reload: got %d", len(got))
+	}
+}
+
+func TestStore_SystemAndUserRoots(t *testing.T) {
+	user := t.TempDir()
+	system := t.TempDir()
+	writeSkill(t, system, "html-artifact", "---\nname: html-artifact\ndescription: System canvas.\n---\n")
+	writeSkill(t, user, "finances", "---\nname: finances\ndescription: User finance.\n---\n")
+	// User overrides system on same name.
+	writeSkill(t, system, "shared", "---\nname: shared\ndescription: From system.\n---\n")
+	writeSkill(t, user, "shared", "---\nname: shared\ndescription: From user.\n---\n")
+
+	s, err := New(user, system, silentLogger())
+	if err != nil {
+		t.Fatal(err)
+	}
+	list := s.List()
+	if len(list) != 3 {
+		t.Fatalf("got %d skills, want 3", len(list))
+	}
+	byName := map[string]skills.Skill{}
+	for _, sk := range list {
+		byName[sk.Name] = sk
+	}
+	if byName["html-artifact"].Source != skills.SourceSystem {
+		t.Errorf("html-artifact source=%q", byName["html-artifact"].Source)
+	}
+	if byName["finances"].Source != skills.SourceUser {
+		t.Errorf("finances source=%q", byName["finances"].Source)
+	}
+	if byName["shared"].Source != skills.SourceUser || byName["shared"].Description != "From user." {
+		t.Errorf("shared should be user override: %+v", byName["shared"])
+	}
+	if got := s.Root(); got == "" {
+		t.Error("Root should be user dir")
+	}
+	if got := s.SystemRoot(); got == "" {
+		t.Error("SystemRoot should be set")
 	}
 }

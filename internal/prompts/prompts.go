@@ -267,10 +267,11 @@ func writeSubagentCatalog(sb *strings.Builder, catalog []subagent.Catalog) {
 }
 
 // writeSkillCatalog renders the tier-1 skill disclosure section:
-// behavioral instructions plus a bulleted name/description list.
-// Format follows the agentskills.io implementation guide: the catalog
-// itself is small (~100 tok per skill), full instructions only load
-// when the model calls skill_activate.
+// behavioral instructions plus name/description lists split into
+// System (shipped) and User (installed) subsections when both are
+// present. Format follows the agentskills.io implementation guide:
+// the catalog itself is small (~100 tok per skill), full instructions
+// only load when the model calls skill_activate.
 func writeSkillCatalog(sb *strings.Builder, catalog []skills.Skill) {
 	sb.WriteString("## Available Skills\n\n")
 	sb.WriteString("The following skills provide specialized instructions for specific tasks. ")
@@ -278,10 +279,45 @@ func writeSkillCatalog(sb *strings.Builder, catalog []skills.Skill) {
 	sb.WriteString("with the skill's name to load its full instructions. ")
 	sb.WriteString("Skills can also expose bundled scripts and references that are loaded ")
 	sb.WriteString("on demand via `skill_read`, and execute scripts in an isolated sandbox via `skill_execute`.\n\n")
+
+	var system, user, other []skills.Skill
 	for _, s := range catalog {
-		fmt.Fprintf(sb, "- **%s**: %s\n", s.Name, s.Description)
+		switch s.Source {
+		case skills.SourceSystem:
+			system = append(system, s)
+		case skills.SourceUser:
+			user = append(user, s)
+		default:
+			other = append(other, s)
+		}
 	}
-	sb.WriteString("\n")
+
+	writeSkillGroup := func(title string, group []skills.Skill) {
+		if len(group) == 0 {
+			return
+		}
+		fmt.Fprintf(sb, "### %s\n\n", title)
+		for _, s := range group {
+			fmt.Fprintf(sb, "- **%s**: %s\n", s.Name, s.Description)
+		}
+		sb.WriteString("\n")
+	}
+
+	// Prefer labeled subsections whenever Source is set. Untagged
+	// entries (tests / legacy) fall back to a flat list only when no
+	// system/user skills are present.
+	if len(system) > 0 || len(user) > 0 {
+		writeSkillGroup("System", system)
+		writeSkillGroup("User", user)
+		writeSkillGroup("Other", other)
+	} else {
+		for _, s := range other {
+			fmt.Fprintf(sb, "- **%s**: %s\n", s.Name, s.Description)
+		}
+		if len(other) > 0 {
+			sb.WriteString("\n")
+		}
+	}
 }
 
 // lineCountFor returns the number of newline-delimited lines in s. A

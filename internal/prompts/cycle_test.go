@@ -90,13 +90,16 @@ func TestBuildCycleContext_NoLimitKeepsFullContent(t *testing.T) {
 
 func TestBuildCycleContext_WithSkills(t *testing.T) {
 	cat := []skills.Skill{
-		{Name: "pdf-processing", Description: "Handle PDFs."},
-		{Name: "data-analysis", Description: "Analyze datasets."},
+		{Name: "pdf-processing", Description: "Handle PDFs.", Source: skills.SourceUser},
+		{Name: "data-analysis", Description: "Analyze datasets.", Source: skills.SourceUser},
 	}
 	got := BuildCycleContext("SYS", nil, cat, nil, "", time.Now(), 2000)
 
 	if !strings.Contains(got, "## Available Skills") {
 		t.Error("missing Available Skills header")
+	}
+	if !strings.Contains(got, "### User") {
+		t.Error("missing User subsection")
 	}
 	if !strings.Contains(got, "**pdf-processing**: Handle PDFs.") {
 		t.Errorf("missing pdf-processing entry; got %q", got)
@@ -106,6 +109,28 @@ func TestBuildCycleContext_WithSkills(t *testing.T) {
 	}
 	if !strings.Contains(got, "skill_activate") {
 		t.Error("missing skill_activate instruction")
+	}
+}
+
+func TestBuildCycleContext_SkillsSystemAndUser(t *testing.T) {
+	cat := []skills.Skill{
+		{Name: "html-artifact", Description: "Publish pages.", Source: skills.SourceSystem},
+		{Name: "finances", Description: "Budget Q&A.", Source: skills.SourceUser},
+	}
+	got := BuildCycleContext("SYS", nil, cat, nil, "", time.Now(), 2000)
+	sysIdx := strings.Index(got, "### System")
+	userIdx := strings.Index(got, "### User")
+	if sysIdx < 0 || userIdx < 0 {
+		t.Fatalf("missing subsections: system=%d user=%d\n%s", sysIdx, userIdx, got)
+	}
+	if sysIdx > userIdx {
+		t.Error("System subsection should appear before User")
+	}
+	if !strings.Contains(got, "**html-artifact**: Publish pages.") {
+		t.Error("missing system skill entry")
+	}
+	if !strings.Contains(got, "**finances**: Budget Q&A.") {
+		t.Error("missing user skill entry")
 	}
 }
 

@@ -363,12 +363,14 @@ func main() {
 	// stays empty and Reload picks up skills the operator adds later.
 	var skillStore *skillsfs.Store
 	if cfg.Skills.Active() {
-		skillStore, err = skillsfs.New(cfg.Skills.Dir, logger)
+		skillStore, err = skillsfs.New(cfg.Skills.Dir, cfg.Skills.SystemDir, logger)
 		if err != nil {
-			logger.Error("init skills store", "error", err, "dir", cfg.Skills.Dir)
+			logger.Error("init skills store", "error", err, "dir", cfg.Skills.Dir, "system_dir", cfg.Skills.SystemDir)
 			os.Exit(1)
 		}
-		logger.Info("skills enabled", "dir", skillStore.Root())
+		logger.Info("skills enabled",
+			"dir", skillStore.Root(),
+			"system_dir", skillStore.SystemRoot())
 
 		// Load the operator-controlled enable/disable state file
 		// (admin UI's Skills page persists toggles here). Missing
@@ -486,7 +488,7 @@ func main() {
 		Updater:              updater,
 		Embedder:             embedder,
 		Skills:               skillStore,
-		SkillInstallEnabled:  cfg.Skills.InstallEnabled,
+		SkillInstallEnabled:  cfg.Skills.InstallEnabled && cfg.Skills.Dir != "",
 		EmbedBatchSize:       cfg.Embeddings.BatchSize,
 		MCPDiscovered:        mcpDiscovered,
 		MCPCaller:            mcpCaller,
