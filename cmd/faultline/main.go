@@ -545,6 +545,11 @@ func main() {
 		logger.Info("peer messaging delivery=pull")
 	}
 
+	var daemonAlertsPort agent.DaemonAlerts
+	if sb != nil && sb.AlertInbox() != nil {
+		daemonAlertsPort = sb.AlertInbox()
+	}
+
 	a := agent.New(cfg, agent.Deps{
 		Chat:      chat,
 		Memory:    memory,
@@ -557,6 +562,7 @@ func main() {
 		Subagents: subagentsPort,
 		Scheduler: scheduler,
 		Peers:     peersPort,
+		Daemons:   daemonAlertsPort,
 	}, logger)
 	defer a.Close()
 

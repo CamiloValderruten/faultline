@@ -39,6 +39,7 @@ func TestDaemonRunArgsDetachedPersistent(t *testing.T) {
 		"--security-opt\x00no-new-privileges",
 		"--network=none",
 		"-e\x00SYMBOL=BTC",
+		"-e\x00FAULTLINE_ALERTS=/work/alerts.jsonl",
 		"faultline-sandbox\x00python3\x00/scripts/watch.py",
 	} {
 		if !strings.Contains(joined, want) {

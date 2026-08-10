@@ -49,6 +49,7 @@ func (s *Sandbox) EnableDaemons(max int) error {
 	}
 	s.daemonOwner = owner
 	s.daemonMax = max
+	s.startDaemonAlertWatch()
 	return nil
 }
 
@@ -124,6 +125,7 @@ func (s *Sandbox) daemonRunArgs(containerName, owner, id, name, description, cre
 	}
 	args = appendEnvFlags(args, s.env)
 	args = appendEnvFlags(args, env)
+	args = append(args, "-e", alertsEnvVar+"="+alertsPathInCtr)
 	if !s.network {
 		args = append(args, "--network=none")
 	}

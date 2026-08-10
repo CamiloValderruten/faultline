@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/CamiloValderruten/faultline/internal/adapters/llm/kobold"
+	"github.com/CamiloValderruten/faultline/internal/daemon"
 	"github.com/CamiloValderruten/faultline/internal/llm"
 	"github.com/CamiloValderruten/faultline/internal/peer"
 	"github.com/CamiloValderruten/faultline/internal/schedule"
@@ -138,4 +139,12 @@ type Subagents interface {
 // (tools-only). Child agents never receive this port.
 type Peers interface {
 	Pending() []peer.Message
+}
+
+// DaemonAlerts is the inbox port for push notifications from long-lived
+// sandbox daemons (JSONL lines appended to /work/alerts.jsonl). Pending
+// drains unread alerts; HasPending wakes sleep. Nil when [daemons] is off.
+type DaemonAlerts interface {
+	Pending() []daemon.Alert
+	HasPending() bool
 }

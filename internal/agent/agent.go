@@ -16,6 +16,7 @@ import (
 	"github.com/CamiloValderruten/faultline/internal/adapters/llm/kobold"
 	"github.com/CamiloValderruten/faultline/internal/adapters/memory/fs"
 	"github.com/CamiloValderruten/faultline/internal/config"
+	daemonpkg "github.com/CamiloValderruten/faultline/internal/daemon"
 	"github.com/CamiloValderruten/faultline/internal/llm"
 	"github.com/CamiloValderruten/faultline/internal/peer"
 	prompt "github.com/CamiloValderruten/faultline/internal/prompts"
@@ -39,6 +40,7 @@ type Agent struct {
 	subagents            Subagents // nil for primaries with [subagent] off and for all children
 	scheduler            Scheduler // nil when scheduled tasks are disabled
 	peers                Peers     // nil when peers off or delivery=pull
+	daemonAlerts         DaemonAlerts // nil when [daemons] off
 	logger               *slog.Logger
 	maxTurns             int    // 0 means unlimited; >0 caps Run loop iterations (subagent use)
 	systemPromptOverride string // when non-empty, replaces prompts["system"] (subagent use)
@@ -70,6 +72,7 @@ type Deps struct {
 	Subagents Subagents // optional; primary only
 	Scheduler Scheduler // optional; primary only
 	Peers     Peers     // optional; primary only, inject delivery
+	Daemons   DaemonAlerts // optional; primary only when [daemons] enabled
 
 	// MaxTurns caps the Run loop's iteration count. Zero means
 	// unlimited (the normal primary case). Used by subagents to
@@ -103,6 +106,7 @@ func New(cfg *config.Config, deps Deps, logger *slog.Logger) *Agent {
 		subagents:            deps.Subagents,
 		scheduler:            deps.Scheduler,
 		peers:                deps.Peers,
+		daemonAlerts:         deps.Daemons,
 		logger:               logger,
 		maxTurns:             deps.MaxTurns,
 		systemPromptOverride: deps.SystemPromptOverride,
@@ -1049,8 +1053,12 @@ func (a *Agent) injectPendingMessages(messages []llm.Message) ([]llm.Message, bo
 	if a.peers != nil {
 		pendingPeers = a.peers.Pending()
 	}
+	var pendingDaemons []daemonpkg.Alert
+	if a.daemonAlerts != nil {
+		pendingDaemons = a.daemonAlerts.Pending()
+	}
 
-	if len(pendingOp) == 0 && len(pendingSub) == 0 && len(pendingScheduled) == 0 && len(pendingPeers) == 0 {
+	if len(pendingOp) == 0 && len(pendingSub) == 0 && len(pendingScheduled) == 0 && len(pendingPeers) == 0 && len(pendingDaemons) == 0 {
 		return messages, false, false
 	}
 
@@ -1067,7 +1075,26 @@ func (a *Agent) injectPendingMessages(messages []llm.Message) ([]llm.Message, bo
 	if len(pendingPeers) > 0 {
 		messages = a.appendPeerMessages(messages, pendingPeers)
 	}
+	if len(pendingDaemons) > 0 {
+		messages = a.appendDaemonAlerts(messages, pendingDaemons)
+	}
 	return messages, true, collaborator
+}
+
+// appendDaemonAlerts formats drained daemon alerts as user turns.
+func (a *Agent) appendDaemonAlerts(messages []llm.Message, pending []daemonpkg.Alert) []llm.Message {
+	for _, alert := range pending {
+		a.logger.Info("injecting daemon alert into conversation",
+			"daemon_id", alert.DaemonID,
+			"name", alert.Name,
+		)
+		messages = append(messages, llm.Message{
+			Role: llm.RoleUser,
+			Content: fmt.Sprintf("[Daemon alert from %s (%s) - %s]\n\n%s\n\nThis is a push notification from a background daemon (wrote /work/alerts.jsonl). Use daemon_fetch / daemon_list if you need more context; reply to the collaborator only if warranted.",
+				alert.Name, alert.DaemonID, time.Now().Format(time.RFC1123), alert.Text),
+		})
+	}
+	return messages
 }
 
 // appendPeerMessages formats drained peer inbox entries as user turns.

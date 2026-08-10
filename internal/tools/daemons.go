@@ -10,6 +10,13 @@ import (
 	"github.com/CamiloValderruten/faultline/internal/llm"
 )
 
+func (te *Executor) daemonAlertInbox() interface{ HasPending() bool } {
+	if te.sandbox == nil {
+		return nil
+	}
+	return te.sandbox.AlertInbox()
+}
+
 func (te *Executor) daemonsEnabled() bool {
 	return te.sandbox != nil && te.sandbox.DaemonOwner() != ""
 }
@@ -24,7 +31,9 @@ func (te *Executor) daemonToolDefs() []llm.Tool {
 					"(--restart unless-stopped). Command must run a flat script under /scripts/ " +
 					"(write it with sandbox_write first). A description is required so daemon_list " +
 					"remains meaningful after context compaction. Inherits sandbox network/memory/user settings. " +
-					"Per-daemon /work is mounted read-write for alerts/state.",
+					"Per-daemon /work is mounted read-write. To wake the agent, append JSONL lines with a " +
+					"\"message\" field to /work/alerts.jsonl (also $FAULTLINE_ALERTS); the harness injects them " +
+					"into the conversation and interrupts sleep. Use stdout JSONL for routine logs (daemon_fetch).",
 				Parameters: map[string]interface{}{
 					"type": "object",
 					"properties": map[string]interface{}{
