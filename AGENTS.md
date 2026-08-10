@@ -393,7 +393,7 @@ The wiring order is load-bearing: admin is built first (it owns the tool ring bu
 
 5. **Two-phase shutdown**: first signal triggers graceful state-saving via the Tools port (model gets up to 10 turns, 2 min); second signal forces immediate exit.
 
-6. **Cooperative collaborator handoff**: incoming Telegram messages never cancel an in-flight LLM request. The agent finishes its current thought, then on the next opportunity (after a text response, or as a deferral of tool calls) the collaborator message is injected.
+6. **Cooperative collaborator handoff**: incoming collaborator messages never cancel an in-flight LLM request. By default (`[agent] wait_for_tools = false`), the agent finishes the current generation, then may defer pending tool calls and inject the message immediately. With `wait_for_tools = true`, messages stay queued until the current turn's tools finish and are injected at the next loop top.
 
 7. **Soft delete with trash**: memory files move to `.trash/` on delete, restorable until `EmptyTrash`.
 

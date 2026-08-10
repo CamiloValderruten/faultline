@@ -623,16 +623,20 @@ func (a *Agent) Run(ctx context.Context, shutdownCh <-chan struct{}) error {
 		a.logBackendPerf()
 
 		// Drain collaborator messages that arrived while the LLM was
-		// generating. Collaborator input is interrupting: it may change
-		// what the agent should do before running tool calls it selected
-		// before seeing that input.
+		// generating — unless wait_for_tools is set, in which case they
+		// stay queued until this turn's tools finish and the next loop
+		// top injects them (Cursor-style turn boundary).
+		//
+		// When draining here, collaborator input is interrupting: it may
+		// change what the agent should do before running tool calls it
+		// selected before seeing that input.
 		//
 		// Scheduled tasks and subagent reports are intentionally not
 		// drained here. They are agent-created background work, so they
 		// should not preempt an already-selected tool turn; the top of the
 		// next loop iteration will inject them at a clean boundary.
 		var pendingOp []string
-		if a.operator != nil {
+		if a.operator != nil && !a.cfg.Agent.WaitForTools {
 			pendingOp = a.operator.Pending()
 		}
 		hasPending := len(pendingOp) > 0

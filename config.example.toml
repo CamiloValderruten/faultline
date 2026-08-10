@@ -63,6 +63,12 @@ scheduled_tasks_file = "./scheduled-tasks.json"
 # forced shutdown still interrupt mid-sleep regardless of this setting.
 max_sleep = "15m"
 
+# When false (default), collaborator messages that arrive during generation
+# may defer pending tool calls and inject right after the LLM response.
+# When true, they stay queued until the current turn's tools finish, then
+# inject at the next loop boundary (Cursor-style).
+wait_for_tools = false
+
 # --- Sampler parameters ----------------------------------------------------
 # OpenAI-spec fields (sent on every request):
 temperature       = 0.8

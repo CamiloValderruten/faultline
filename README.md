@@ -247,7 +247,7 @@ The default contents of these prompts live in `internal/prompts/templates/*.md` 
 
 ### Telegram Integration
 
-Bidirectional communication with a human collaborator via Telegram. Incoming messages are surfaced at the next turn boundary -- the in-flight LLM request is never cancelled, so the agent finishes its current thought before responding. If the agent was about to use tools when the message arrived, those calls are deferred and the agent can choose whether to re-issue them after replying. Outgoing messages are converted to Telegram MarkdownV2 with auto-chunking for the 4096-character limit, falling back to plain text on conversion failure.
+Bidirectional communication with a human collaborator via Telegram or Discord. Incoming messages never cancel an in-flight LLM request. By default (`wait_for_tools = false`), if the agent was about to use tools when a message arrived, those calls are deferred and the agent can choose whether to re-issue them after reading the new input. With `wait_for_tools = true`, messages stay queued until the current turn's tools finish. Outgoing Telegram messages are converted to MarkdownV2 with auto-chunking for the 4096-character limit, falling back to plain text on conversion failure.
 
 ### Multi-runtime Sandbox
 
