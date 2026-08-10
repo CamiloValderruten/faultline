@@ -125,6 +125,13 @@ type AgentConfig struct {
 	// 15-minute default at config load.
 	MaxSleep duration `toml:"max_sleep"`
 
+	// WaitForTools controls when collaborator messages that arrive during
+	// an LLM generation are injected. When false (default), they may
+	// defer the model's pending tool calls and inject immediately after
+	// the response. When true, they stay queued until the current turn's
+	// tools finish and are injected at the top of the next loop iteration.
+	WaitForTools bool `toml:"wait_for_tools"`
+
 	// StateFile is the path to a JSON file holding the live conversation
 	// log. When non-empty, the agent saves the message log atomically at
 	// the top of every loop iteration (right before each LLM call) and
