@@ -239,6 +239,11 @@ func (te *Executor) sleep(ctx context.Context, argsJSON string) string {
 			"requested_s", args.Seconds)
 		return clampNote + "Did not sleep: a daemon alert is already pending. Handle it before sleeping."
 	}
+	if te.turnWake != nil && te.turnWake() {
+		te.logger.Info("sleep skipped: headset turn already pending",
+			"requested_s", args.Seconds)
+		return clampNote + "Did not sleep: a headset turn is already pending. Handle it before sleeping."
+	}
 
 	te.logger.Info("sleep started", "requested_s", args.Seconds, "actual_s", int(target.Seconds()))
 
@@ -278,6 +283,11 @@ func (te *Executor) sleep(ctx context.Context, argsJSON string) string {
 				elapsed := time.Since(start).Round(time.Second)
 				te.logger.Info("sleep interrupted by daemon alert", "elapsed_s", int(elapsed.Seconds()))
 				return clampNote + fmt.Sprintf("Slept for %s then interrupted: daemon alert pending.", elapsed)
+			}
+			if te.turnWake != nil && te.turnWake() {
+				elapsed := time.Since(start).Round(time.Second)
+				te.logger.Info("sleep interrupted by headset turn", "elapsed_s", int(elapsed.Seconds()))
+				return clampNote + fmt.Sprintf("Slept for %s then interrupted: headset turn pending.", elapsed)
 			}
 			// Belt-and-braces: if the timer fires between selects somehow,
 			// still exit at the deadline rather than oversleeping.

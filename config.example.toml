@@ -606,3 +606,17 @@ bind = "127.0.0.1:8744"
 # Empty uses the built-in marked.js wrapper.
 # md_template = ""
 
+# ---------------------------------------------------------------------------
+# [turn] — blocking local-voice HTTP API for a USB headset sidecar.
+#
+# POST /v1/turn with Authorization: Bearer <token> and {"text":"..."}.
+# The running agent loop produces a spoken reply as {"text":"..."}.
+# Discord stays quiet for that turn. Bind should be published loopback-only
+# (see docker-compose 127.0.0.1:8760:8760). Do not put this behind Cloudflare.
+# ---------------------------------------------------------------------------
+[turn]
+enabled = false
+bind = "0.0.0.0:8760"
+# token = ""
+# timeout = "10m"
+

@@ -15,6 +15,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/CamiloValderruten/faultline/internal/adapters/email/imap"
@@ -137,6 +138,23 @@ var subagentForbidden = map[string]struct{}{
 	"subagent_wait":             {},
 	"subagent_status":           {},
 	"subagent_cancel":           {},
+}
+
+// localTurnForbidden is the deny list while a USB-headset turn is active.
+// Discord/Telegram delivery, nested agents (they inherit the messenger),
+// and MCP config proposals (approval notifier posts to Discord) must not run.
+var localTurnForbidden = map[string]struct{}{
+	"send_message":              {},
+	"send_rich_message":         {},
+	"send_voice_message":        {},
+	"send_file":                 {},
+	"subagent_run":              {},
+	"subagent_spawn":            {},
+	"subagent_wait":             {},
+	"subagent_status":           {},
+	"subagent_cancel":           {},
+	"mcp_propose_config_update": {},
+	"mcp_update_config":         {},
 }
 
 // ToolDefs returns the tool definitions advertised to the LLM.
@@ -1317,6 +1335,20 @@ func (te *Executor) buildAllToolDefs() []llm.Tool {
 		}
 		tools = filtered
 	}
+	if te.localTurn.Load() {
+		filtered := tools[:0]
+		for _, t := range tools {
+			if t.Function == nil {
+				filtered = append(filtered, t)
+				continue
+			}
+			if _, banned := localTurnForbidden[t.Function.Name]; banned {
+				continue
+			}
+			filtered = append(filtered, t)
+		}
+		tools = filtered
+	}
 
 	return tools
 }
@@ -1369,6 +1401,8 @@ type Executor struct {
 	currentTokens       int
 	limits              config.LimitsConfig
 	maxSleep            time.Duration // upper bound for the `sleep` tool
+	localTurn           atomic.Bool
+	turnWake            func() bool
 
 	// Subagent wiring (optional). subagentMgr is set on the primary
 	// Executor when [subagent] is enabled; subagentReportFn is set on
@@ -1527,6 +1561,21 @@ func New(deps Deps) *Executor {
 	}
 }
 
+// SetLocalTurn enables or disables the headset-turn tool denylist.
+func (te *Executor) SetLocalTurn(active bool) {
+	if te != nil {
+		te.localTurn.Store(active)
+	}
+}
+
+// SetTurnWake registers an extra HasPending check so sleep returns when a
+// headset turn is queued.
+func (te *Executor) SetTurnWake(fn func() bool) {
+	if te != nil {
+		te.turnWake = fn
+	}
+}
+
 // Close releases resources owned by the primary executor. The shared WebCache
 // is owned by the composition root, not the Executor, because multiple
 // Executor instances (primary + subagents) share one cache and a child's Close
@@ -1629,6 +1678,11 @@ func (te *Executor) dispatch(ctx context.Context, call llm.ToolCall) string {
 	if te.mode == ModeSubagent {
 		if _, banned := subagentForbidden[name]; banned {
 			return fmt.Sprintf("Tool %q is not available to subagents.", name)
+		}
+	}
+	if te.localTurn.Load() {
+		if _, banned := localTurnForbidden[name]; banned {
+			return fmt.Sprintf("Tool %q is not available during a headset turn.", name)
 		}
 	}
 

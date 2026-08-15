@@ -461,3 +461,47 @@ enabled = true
 		t.Fatalf("daemons=%+v", cfg.Daemons)
 	}
 }
+
+func TestLoad_TurnRequiresToken(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.toml")
+	if err := os.WriteFile(path, []byte(`
+[api]
+url = "http://localhost/v1"
+model = "x"
+[turn]
+enabled = true
+`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Load(path); err == nil {
+		t.Fatal("expected error when turn enabled without token")
+	}
+}
+
+func TestLoad_TurnOK(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.toml")
+	if err := os.WriteFile(path, []byte(`
+[api]
+url = "http://localhost/v1"
+model = "x"
+[turn]
+enabled = true
+token = "headset-secret"
+timeout = "2m"
+`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !cfg.Turn.Active() || cfg.Turn.Token != "headset-secret" {
+		t.Fatalf("turn=%+v", cfg.Turn)
+	}
+	if cfg.Turn.Bind != "0.0.0.0:8760" {
+		t.Fatalf("bind=%q", cfg.Turn.Bind)
+	}
+	if cfg.Turn.Timeout.Duration() != 2*time.Minute {
+		t.Fatalf("timeout=%s", cfg.Turn.Timeout.Duration())
+	}
+}

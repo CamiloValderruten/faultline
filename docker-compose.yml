@@ -35,10 +35,33 @@ services:
     ports:
       # HTML publishing harness — Cloudflare Tunnel via host.docker.internal
       - "8750:8750"
+      # Local-voice turn API — loopback only, USB headset sidecar
+      - "127.0.0.1:8760:8760"
     volumes:
       - /home/camilovalderruten/faultline/arlo.config.toml:/config/config.toml:ro
       - /home/camilovalderruten/.faultline/agents/arlo:/agent:rw
       - /home/camilovalderruten/.faultline/shared/memory:/agent/memory/shared:rw
       - /home/camilovalderruten/.faultline/agents/arlo/sandbox:/home/camilovalderruten/.faultline/agents/arlo/sandbox:rw
       - /var/run/docker.sock:/var/run/docker.sock
+    restart: unless-stopped
+
+  arlo-headset:
+    build:
+      context: .
+      dockerfile: docker/headset/Dockerfile
+    image: faultline-headset:latest
+    container_name: faultline-arlo-headset
+    network_mode: host
+    group_add:
+      - "29"
+    devices:
+      - /dev/snd
+    env_file:
+      - /home/camilovalderruten/.faultline/agents/arlo/headset.env
+    environment:
+      - TZ=America/New_York
+      - ALSA_CARD=Headset
+      - TURN_URL=http://127.0.0.1:8760
+    depends_on:
+      - arlo
     restart: unless-stopped

@@ -69,6 +69,12 @@ type Config struct {
 	// bind. Separate from [admin] so the public origin never shares
 	// an authenticated mux.
 	Publish PublishConfig `toml:"publish"`
+
+	// Turn is optional; when Enabled, a dedicated HTTP listener accepts
+	// blocking local-voice turns (USB headset sidecar). Separate from
+	// [publish] (public) and [admin] (browser cookies). Bind should be
+	// container-local and published loopback-only at deploy time.
+	Turn TurnConfig `toml:"turn"`
 }
 
 // APIConfig holds LLM API connection settings.
@@ -593,6 +599,19 @@ func (p PublishConfig) Active() bool {
 	return p.Enabled && p.Bind != ""
 }
 
+// TurnConfig holds settings for the blocking local-voice HTTP API.
+type TurnConfig struct {
+	Enabled bool     `toml:"enabled"`
+	Bind    string   `toml:"bind"`
+	Token   string   `toml:"token"`
+	Timeout duration `toml:"timeout"`
+}
+
+// Active reports whether the local-turn HTTP server should be wired up.
+func (t TurnConfig) Active() bool {
+	return t.Enabled && strings.TrimSpace(t.Bind) != "" && strings.TrimSpace(t.Token) != ""
+}
+
 // Peer delivery modes for [peers].delivery.
 const (
 	PeersDeliveryPull   = "pull"
@@ -782,6 +801,11 @@ func Default() *Config {
 			Enabled: false,
 			Bind:    "127.0.0.1:8744",
 		},
+		Turn: TurnConfig{
+			Enabled: false,
+			Bind:    "0.0.0.0:8760",
+			Timeout: duration(10 * time.Minute),
+		},
 	}
 }
 
@@ -927,6 +951,21 @@ func Load(path string) (*Config, error) {
 
 	if cfg.Telegram.Enabled() && cfg.Discord.Enabled() {
 		return nil, fmt.Errorf("configure only one collaborator channel: [telegram] or [discord], not both")
+	}
+
+	if cfg.Turn.Bind == "" {
+		cfg.Turn.Bind = "0.0.0.0:8760"
+	}
+	if cfg.Turn.Timeout.Duration() <= 0 {
+		cfg.Turn.Timeout = duration(10 * time.Minute)
+	}
+	if cfg.Turn.Enabled {
+		if strings.TrimSpace(cfg.Turn.Token) == "" {
+			return nil, fmt.Errorf("[turn] token is required when enabled")
+		}
+		if strings.TrimSpace(cfg.Turn.Bind) == "" {
+			return nil, fmt.Errorf("[turn] bind is required when enabled")
+		}
 	}
 
 	return cfg, nil

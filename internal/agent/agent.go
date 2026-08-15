@@ -44,6 +44,8 @@ type Agent struct {
 	logger               *slog.Logger
 	maxTurns             int    // 0 means unlimited; >0 caps Run loop iterations (subagent use)
 	systemPromptOverride string // when non-empty, replaces prompts["system"] (subagent use)
+	localTurns           *localTurns
+	localInFlight        *localTurnRequest
 
 	// stopRequested is set by RequestStop; the Run loop checks it at
 	// the top of each iteration and exits cleanly when set. Used by
@@ -111,6 +113,7 @@ func New(cfg *config.Config, deps Deps, logger *slog.Logger) *Agent {
 		maxTurns:             deps.MaxTurns,
 		systemPromptOverride: deps.SystemPromptOverride,
 		inspector:            newInspectorState(time.Now()),
+		localTurns:           newLocalTurns(),
 	}
 }
 
@@ -333,6 +336,7 @@ func (a *Agent) Run(ctx context.Context, shutdownCh <-chan struct{}) error {
 	// Mark stopped on every return path so the admin UI can
 	// distinguish a live loop from one that exited.
 	defer a.setPhase(PhaseStopped)
+	defer a.failLocalTurn(fmt.Errorf("agent loop ended"))
 
 	// Build initial context. When state persistence is enabled and a
 	// saved file exists, this resumes the conversation log; otherwise it
@@ -444,16 +448,30 @@ func (a *Agent) Run(ctx context.Context, shutdownCh <-chan struct{}) error {
 		default:
 		}
 
-		// Inject any collaborator / subagent / scheduled / peer messages
-		// that arrived between turns. Collaborator batches open a
-		// delivery debt cleared only by a successful outbound send_*.
+		// Inject a queued headset turn, or any collaborator / subagent /
+		// scheduled / peer messages that arrived between turns.
+		// Headset turns skip the Discord drain so the spoken reply cannot
+		// mix with a collaborator batch (and must not open delivery debt).
 		var injected, collaboratorInjected bool
-		messages, injected, collaboratorInjected = a.injectPendingMessages(messages)
+		if a.localInFlight == nil {
+			if req := a.localTurns.takePending(); req != nil {
+				a.localInFlight = req
+				a.setLocalTurnTools(true)
+				messages = append(messages, localTurnUserMessage(req.text))
+				injected = true
+			}
+		}
+		if a.localInFlight == nil {
+			messages, injected, collaboratorInjected = a.injectPendingMessages(messages)
+		}
 		if injected {
 			idleStreak = 0
 		}
 		if collaboratorInjected {
 			collaboratorReplyOwed = true
+		}
+		if a.localInFlight != nil {
+			toolDefs = a.tools.ToolDefs()
 		}
 
 		// Check if compaction is needed
@@ -549,7 +567,9 @@ func (a *Agent) Run(ctx context.Context, shutdownCh <-chan struct{}) error {
 		// reasoning. Any collaborator messages that arrive during generation
 		// are handled after the response comes back (see below).
 		a.setPhase(PhaseGenerating)
-		a.signalTyping()
+		if a.localInFlight == nil {
+			a.signalTyping()
+		}
 		chatStart := time.Now()
 		resp, err := a.chat.Chat(ctx, a.chatReq(messages, toolDefs))
 		chatLatency := time.Since(chatStart)
@@ -640,7 +660,7 @@ func (a *Agent) Run(ctx context.Context, shutdownCh <-chan struct{}) error {
 		// should not preempt an already-selected tool turn; the top of the
 		// next loop iteration will inject them at a clean boundary.
 		var pendingOp []string
-		if a.operator != nil && !a.cfg.Agent.WaitForTools {
+		if a.operator != nil && !a.cfg.Agent.WaitForTools && a.localInFlight == nil {
 			pendingOp = a.operator.Pending()
 		}
 		hasPending := len(pendingOp) > 0
@@ -701,6 +721,17 @@ func (a *Agent) Run(ctx context.Context, shutdownCh <-chan struct{}) error {
 			messages = append(messages, llm.Message{
 				Role:    llm.RoleUser,
 				Content: fmt.Sprintf(collaboratorDeliveryDebtPrompt, time.Now().Format(time.RFC1123)),
+			})
+
+		case a.localInFlight != nil:
+			// Spoken reply is the assistant text. Do not open Discord
+			// delivery debt and do not idle-nudge; the sidecar is waiting.
+			idleStreak = 0
+			a.finishLocalTurn(msg.Content)
+			now := time.Now()
+			messages = append(messages, llm.Message{
+				Role:    llm.RoleUser,
+				Content: prompt.Render(prompts["continue"], now),
 			})
 
 		default:

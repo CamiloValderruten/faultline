@@ -565,6 +565,16 @@ func main() {
 		Daemons:   daemonAlertsPort,
 	}, logger)
 	defer a.Close()
+	toolExec.SetTurnWake(a.LocalTurnPending)
+
+	turnSrv, err := buildTurnServer(cfg.Turn, a, logger)
+	if err != nil {
+		logger.Error("local turn HTTP failed to configure", "error", err)
+		os.Exit(1)
+	}
+	if turnSrv != nil {
+		turnSrv.Start(ctx)
+	}
 
 	// Now that the agent and (optionally) subagent manager exist,
 	// hand them to the admin server as inspector ports. The admin
@@ -618,6 +628,7 @@ func main() {
 		oauthSrv.Wait()
 		publishSrv.Wait()
 		peerSrv.Wait()
+		turnSrv.Wait()
 		adminSrv.Wait()
 		adminSrv.Close()
 		os.Exit(1)
@@ -631,6 +642,7 @@ func main() {
 	oauthSrv.Wait()
 	publishSrv.Wait()
 	peerSrv.Wait()
+	turnSrv.Wait()
 	adminSrv.Wait()
 	adminSrv.Close()
 

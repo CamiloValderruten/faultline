@@ -9,3 +9,4 @@ config.toml
 mcp.json
 oauth-tokens.json
 scheduled-tasks.json
+headset.env
