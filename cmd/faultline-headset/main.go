@@ -234,9 +234,21 @@ func submitTurn(ctx context.Context, turnURL, token, text string) (string, error
 }
 
 func playWAV(ctx context.Context, card string, wav []byte) error {
+	f, err := os.CreateTemp("", "headset-*.wav")
+	if err != nil {
+		return err
+	}
+	path := f.Name()
+	defer os.Remove(path)
+	if _, err := f.Write(wav); err != nil {
+		_ = f.Close()
+		return err
+	}
+	if err := f.Close(); err != nil {
+		return err
+	}
 	device := fmt.Sprintf("plughw:CARD=%s,DEV=0", card)
-	cmd := exec.CommandContext(ctx, "aplay", "-D", device, "-q")
-	cmd.Stdin = bytes.NewReader(wav)
+	cmd := exec.CommandContext(ctx, "aplay", "-D", device, "-t", "wav", "-q", path)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("aplay: %w %s", err, bytes.TrimSpace(out))

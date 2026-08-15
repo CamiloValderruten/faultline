@@ -264,7 +264,7 @@ func (a *Agent) countMessageTokens(messages []llm.Message) int {
 // stays in one place. Messages and tools are caller-supplied because they
 // vary per call (main loop, compaction, shutdown save).
 func (a *Agent) chatReq(messages []llm.Message, tools []llm.Tool) llm.ChatRequest {
-	return llm.ChatRequest{
+	req := llm.ChatRequest{
 		Messages:          messages,
 		Tools:             tools,
 		Temperature:       a.cfg.Agent.Temperature,
@@ -278,6 +278,10 @@ func (a *Agent) chatReq(messages []llm.Message, tools []llm.Tool) llm.ChatReques
 		RepetitionPenalty: a.cfg.Agent.RepetitionPenalty,
 		Thinking:          a.cfg.Agent.Thinking,
 	}
+	if a.localInFlight != nil {
+		req.Thinking = "disabled"
+	}
+	return req
 }
 
 // abortInFlight asks the backend to stop any currently-running generation.

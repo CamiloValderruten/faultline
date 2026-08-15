@@ -203,15 +203,24 @@ func (o *scriptedOperator) Pending() []string {
 }
 
 type scriptedChat struct {
-	mu        sync.Mutex
-	responses []*llm.ChatResponse
-	seen      []llm.Message
+	mu               sync.Mutex
+	responses        []*llm.ChatResponse
+	seen             []llm.Message
+	headsetThinking  string
+	sawHeadsetPrompt bool
 }
 
 func (c *scriptedChat) Chat(_ context.Context, req llm.ChatRequest) (*llm.ChatResponse, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.seen = append([]llm.Message(nil), req.Messages...)
+	for _, m := range req.Messages {
+		if m.Role == llm.RoleUser && strings.Contains(m.Content, "USB headset") {
+			c.sawHeadsetPrompt = true
+			c.headsetThinking = req.Thinking
+			break
+		}
+	}
 	if len(c.responses) == 0 {
 		return textOnlyResponse("done"), nil
 	}

@@ -20,7 +20,7 @@ const localTurnPreamble = `[Local headset turn - %s]
 
 You are speaking aloud over a USB headset. Discord is silent for this turn.
 Do not call send_message, send_rich_message, send_voice_message, send_file, or any subagent tool.
-Your final assistant text (no tool calls) is spoken to the headset. Keep it concise spoken language, under 2000 characters.
+Do not emit a think block. Your final assistant text (no tool calls) is spoken verbatim to the headset. Keep it concise spoken language, under 2000 characters.
 
 They said: %s`
 
@@ -147,7 +147,26 @@ func (a *Agent) finishLocalTurn(text string) {
 	a.localInFlight = nil
 	a.setLocalTurnTools(false)
 	a.localTurns.clearInflight()
-	completeLocalTurn(req, strings.TrimSpace(text), nil)
+	completeLocalTurn(req, spokenReply(text), nil)
+}
+
+// spokenReply is the text the sidecar should TTS: strip MiniMax <think>
+// blocks so chain-of-thought is never played over the headset.
+func spokenReply(content string) string {
+	s := content
+	for {
+		start := strings.Index(s, "<think>")
+		if start < 0 {
+			break
+		}
+		end := strings.Index(s[start:], "</think>")
+		if end < 0 {
+			s = s[:start]
+			break
+		}
+		s = s[:start] + s[start+end+len("</think>"):]
+	}
+	return strings.TrimSpace(s)
 }
 
 func (a *Agent) failLocalTurn(err error) {
