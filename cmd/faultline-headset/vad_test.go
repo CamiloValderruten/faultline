@@ -37,6 +37,23 @@ func TestVADCapturesSpeechThenSilence(t *testing.T) {
 	}
 }
 
+func TestStripWakePrefix(t *testing.T) {
+	cases := []struct {
+		in, want string
+	}{
+		{"Alexa, how's Luca?", "how's Luca?"},
+		{"alexa how are you", "how are you"},
+		{"Alexa", ""},
+		{"hey Alexa, lights", "lights"},
+		{"how's Luca?", "how's Luca?"},
+	}
+	for _, tc := range cases {
+		if got := stripWakePrefix(tc.in); got != tc.want {
+			t.Errorf("stripWakePrefix(%q)=%q want %q", tc.in, got, tc.want)
+		}
+	}
+}
+
 func TestVADIgnoresClick(t *testing.T) {
 	v := newVAD(100, 50)
 	loud := make([]byte, frameSamples*2)

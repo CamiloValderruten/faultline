@@ -62,6 +62,7 @@ services:
       - TZ=America/New_York
       - ALSA_CARD=Headset
       - TURN_URL=http://127.0.0.1:8760
+      - WAKE_MODEL=alexa
     depends_on:
       - arlo
     restart: unless-stopped

@@ -12,9 +12,12 @@ RUN CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH} \
 
 FROM debian:bookworm-slim
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends alsa-utils ca-certificates \
-    && rm -rf /var/lib/apt/lists/*
+    && apt-get install -y --no-install-recommends alsa-utils ca-certificates python3 python3-pip \
+    && rm -rf /var/lib/apt/lists/* \
+    && pip3 install --break-system-packages --no-cache-dir openwakeword onnxruntime \
+    && python3 -c "from openwakeword.utils import download_models; download_models(['alexa'])"
 COPY --from=builder /workspace/faultline-headset /usr/local/bin/faultline-headset
+COPY cmd/faultline-headset/wake.py /usr/local/bin/headset-wake.py
 # Host ALSA devices are root:audio (gid 29). Stay unprivileged otherwise.
 USER 1000:29
 ENTRYPOINT ["/usr/local/bin/faultline-headset"]

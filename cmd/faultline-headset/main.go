@@ -34,59 +34,86 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	log.Printf("headset sidecar starting card=%s turn=%s", card, turnURL)
+	log.Printf("headset sidecar starting card=%s turn=%s wake=%s", card, turnURL, envOr("WAKE_MODEL", "alexa"))
 	if err := listenLoop(ctx, card, apiKey, sttModel, ttsModel, turnURL, token, startRMS, stopRMS); err != nil && ctx.Err() == nil {
 		log.Fatal(err)
 	}
 }
 
 func listenLoop(ctx context.Context, card, apiKey, sttModel, ttsModel, turnURL, token string, startRMS, stopRMS float64) error {
+	mic, err := startMic(ctx, card)
+	if err != nil {
+		return err
+	}
+	defer mic.close()
+	waker, err := startWaker(ctx)
+	if err != nil {
+		return err
+	}
+	defer waker.close()
+
+	frame := make([]byte, wakeFrameSamples*2)
 	for {
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
-		pcm, err := captureUtterance(ctx, card, startRMS, stopRMS)
+		if _, err := io.ReadFull(mic.r, frame); err != nil {
+			return err
+		}
+		hit, err := waker.feed(frame)
 		if err != nil {
-			if ctx.Err() != nil {
-				return ctx.Err()
+			return fmt.Errorf("wake: %w", err)
+		}
+		if !hit {
+			continue
+		}
+		log.Printf("wake")
+		pcm, err := collectUtterance(mic.r, startRMS, stopRMS, frame)
+		if err != nil {
+			return err
+		}
+		if len(pcm) > 0 {
+			if err := handleSpoken(ctx, card, apiKey, sttModel, ttsModel, turnURL, token, pcm); err != nil {
+				log.Printf("%v", err)
 			}
-			log.Printf("capture: %v", err)
-			time.Sleep(time.Second)
-			continue
 		}
-		if len(pcm) == 0 {
-			continue
-		}
-		wav := wrapWAV(pcm, sampleRate, 1)
-		transcript, err := transcribe(ctx, apiKey, sttModel, wav)
-		if err != nil {
-			log.Printf("stt: %v", err)
-			continue
-		}
-		if transcript == "" {
-			continue
-		}
-		reply, err := submitTurn(ctx, turnURL, token, transcript)
-		if err != nil {
-			log.Printf("turn: %v", err)
-			continue
-		}
-		if strings.TrimSpace(reply) == "" {
-			continue
-		}
-		audio, err := speak(ctx, apiKey, ttsModel, reply)
-		if err != nil {
-			log.Printf("tts: %v", err)
-			continue
-		}
-		if err := playWAV(ctx, card, audio); err != nil {
-			log.Printf("play: %v", err)
-		}
-		time.Sleep(200 * time.Millisecond)
+		_ = drain(mic.r, 2*time.Second)
 	}
 }
 
-func captureUtterance(ctx context.Context, card string, startRMS, stopRMS float64) ([]byte, error) {
+func handleSpoken(ctx context.Context, card, apiKey, sttModel, ttsModel, turnURL, token string, pcm []byte) error {
+	wav := wrapWAV(pcm, sampleRate, 1)
+	transcript, err := transcribe(ctx, apiKey, sttModel, wav)
+	if err != nil {
+		return fmt.Errorf("stt: %w", err)
+	}
+	transcript = stripWakePrefix(transcript)
+	if transcript == "" {
+		return nil
+	}
+	reply, err := submitTurn(ctx, turnURL, token, transcript)
+	if err != nil {
+		return fmt.Errorf("turn: %w", err)
+	}
+	if strings.TrimSpace(reply) == "" {
+		return nil
+	}
+	audio, err := speak(ctx, apiKey, ttsModel, reply)
+	if err != nil {
+		return fmt.Errorf("tts: %w", err)
+	}
+	if err := playWAV(ctx, card, audio); err != nil {
+		return fmt.Errorf("play: %w", err)
+	}
+	return nil
+}
+
+type mic struct {
+	cmd *exec.Cmd
+	r   io.Reader
+}
+
+func startMic(ctx context.Context, card string) (*mic, error) {
 	device := fmt.Sprintf("plughw:CARD=%s,DEV=0", card)
 	cmd := exec.CommandContext(ctx, "arecord",
 		"-D", device,
@@ -103,24 +130,45 @@ func captureUtterance(ctx context.Context, card string, startRMS, stopRMS float6
 	if err := cmd.Start(); err != nil {
 		return nil, fmt.Errorf("arecord: %w", err)
 	}
-	defer func() {
-		_ = cmd.Process.Kill()
-		_ = cmd.Wait()
-	}()
+	return &mic{cmd: cmd, r: stdout}, nil
+}
 
+func (m *mic) close() {
+	if m == nil || m.cmd.Process == nil {
+		return
+	}
+	_ = m.cmd.Process.Kill()
+	_ = m.cmd.Wait()
+}
+
+func collectUtterance(r io.Reader, startRMS, stopRMS float64, first []byte) ([]byte, error) {
 	v := newVAD(startRMS, stopRMS)
-	buf := make([]byte, frameSamples*2)
-	for {
-		if err := ctx.Err(); err != nil {
-			return nil, err
+	step := frameSamples * 2
+	buf := make([]byte, step)
+	for i := 0; i+step <= len(first); i += step {
+		if out := v.push(first[i : i+step]); out != nil {
+			return out, nil
 		}
-		if _, err := io.ReadFull(stdout, buf); err != nil {
+	}
+	for {
+		if _, err := io.ReadFull(r, buf); err != nil {
 			return nil, err
 		}
 		if out := v.push(buf); out != nil {
 			return out, nil
 		}
 	}
+}
+
+func drain(r io.Reader, d time.Duration) error {
+	deadline := time.Now().Add(d)
+	buf := make([]byte, frameSamples*2)
+	for time.Now().Before(deadline) {
+		if _, err := io.ReadFull(r, buf); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func wrapWAV(pcm []byte, rate, channels int) []byte {
