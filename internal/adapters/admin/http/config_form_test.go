@@ -17,7 +17,7 @@ func TestBuildConfigForm_CoversEverySection(t *testing.T) {
 	wantSections := []string{
 		"api", "agent", "telegram", "discord", "deepgram", "log", "sandbox", "daemons", "email",
 		"limits", "update", "mcp", "oauth", "embeddings", "skills",
-		"subagent", "admin", "peers", "publish",
+		"subagent", "admin", "peers", "publish", "webhook",
 	}
 	got := form.SectionPaths()
 	if !reflect.DeepEqual(got, wantSections) {

@@ -393,7 +393,7 @@ The wiring order is load-bearing: admin is built first (it owns the tool ring bu
 
 5. **Two-phase shutdown**: first signal triggers graceful state-saving via the Tools port (model gets up to 10 turns, 2 min); second signal forces immediate exit.
 
-6. **Cooperative collaborator handoff**: incoming collaborator messages never cancel an in-flight LLM request. By default (`[agent] wait_for_tools = false`), the agent finishes the current generation, then may defer pending tool calls and inject the message immediately. With `wait_for_tools = true`, messages stay queued until the current turn's tools finish and are injected at the next loop top.
+6. **Cooperative inbox handoff**: inbound events never cancel an in-flight LLM request. They gather into a single priority inbox (P0 daemon alerts, P1 Discord/Telegram + urgent webhook, P2 subagent/cron, P3 peers, P4 webhook). Each turn drains only the highest nonempty bucket, FIFO, bounded. P0 always interrupts after Chat (even with `wait_for_tools = true`); P1 interrupts after Chat only when `wait_for_tools = false`; P2–P4 wait for the next loop top. Delivery debt (`send_message`) opens only for collaborator sources.
 
 7. **Soft delete with trash**: memory files move to `.trash/` on delete, restorable until `EmptyTrash`.
 

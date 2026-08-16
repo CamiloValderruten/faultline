@@ -565,6 +565,14 @@ func main() {
 		Daemons:   daemonAlertsPort,
 	}, logger)
 	defer a.Close()
+	toolExec.SetInboxPending(a.InboxHasPending)
+
+	webhookSrv, err := buildWebhook(cfg.Webhook, a.PushWebhook, logger)
+	if err != nil {
+		logger.Error("inbox webhook failed to configure", "error", err)
+		os.Exit(1)
+	}
+	webhookSrv.Start(ctx)
 
 	// Now that the agent and (optionally) subagent manager exist,
 	// hand them to the admin server as inspector ports. The admin
@@ -618,6 +626,7 @@ func main() {
 		oauthSrv.Wait()
 		publishSrv.Wait()
 		peerSrv.Wait()
+		webhookSrv.Wait()
 		adminSrv.Wait()
 		adminSrv.Close()
 		os.Exit(1)
@@ -631,6 +640,7 @@ func main() {
 	oauthSrv.Wait()
 	publishSrv.Wait()
 	peerSrv.Wait()
+	webhookSrv.Wait()
 	adminSrv.Wait()
 	adminSrv.Close()
 

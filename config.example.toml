@@ -606,3 +606,22 @@ bind = "127.0.0.1:8744"
 # Empty uses the built-in marked.js wrapper.
 # md_template = ""
 
+# ---------------------------------------------------------------------------
+# [webhook] — authenticated HTTP inbox for Home Assistant / n8n / Shortcuts.
+#
+# POST /v1/inbox  Authorization: Bearer <token>
+# Body: {"text":"...","urgent":false}
+#
+# Default (urgent=false) is P4 and never interrupts a turn. urgent=true
+# shares the P1 bucket with Discord but does NOT open send_message debt —
+# it is not a human collaborator. Daemon alerts must keep using
+# alerts.jsonl (P0); do not HTTP them here.
+#
+# Bind loopback and tunnel if you need LAN/WAN reachability. Token is
+# required when enabled.
+# ---------------------------------------------------------------------------
+[webhook]
+enabled = false
+bind = "127.0.0.1:8760"
+token = ""
+
