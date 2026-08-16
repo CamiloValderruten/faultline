@@ -41,6 +41,7 @@ type Agent struct {
 	scheduler            Scheduler    // nil when scheduled tasks are disabled
 	peers                Peers        // nil when peers off or delivery=pull
 	daemonAlerts         DaemonAlerts // nil when [daemons] off
+	inbox                *Inbox
 	logger               *slog.Logger
 	maxTurns             int    // 0 means unlimited; >0 caps Run loop iterations (subagent use)
 	systemPromptOverride string // when non-empty, replaces prompts["system"] (subagent use)
@@ -107,6 +108,7 @@ func New(cfg *config.Config, deps Deps, logger *slog.Logger) *Agent {
 		scheduler:            deps.Scheduler,
 		peers:                deps.Peers,
 		daemonAlerts:         deps.Daemons,
+		inbox:                newInbox(),
 		logger:               logger,
 		maxTurns:             deps.MaxTurns,
 		systemPromptOverride: deps.SystemPromptOverride,
@@ -626,38 +628,29 @@ func (a *Agent) Run(ctx context.Context, shutdownCh <-chan struct{}) error {
 		// a sudden spike means the KV cache was invalidated.
 		a.logBackendPerf()
 
-		// Drain collaborator messages that arrived while the LLM was
-		// generating — unless wait_for_tools is set, in which case they
-		// stay queued until this turn's tools finish and the next loop
-		// top injects them (Cursor-style turn boundary).
-		//
-		// When draining here, collaborator input is interrupting: it may
-		// change what the agent should do before running tool calls it
-		// selected before seeing that input.
-		//
-		// Scheduled tasks and subagent reports are intentionally not
-		// drained here. They are agent-created background work, so they
-		// should not preempt an already-selected tool turn; the top of the
-		// next loop iteration will inject them at a clean boundary.
-		var pendingOp []string
-		if a.operator != nil && !a.cfg.Agent.WaitForTools {
-			pendingOp = a.operator.Pending()
-		}
-		hasPending := len(pendingOp) > 0
+		// Drain the highest interrupt bucket that arrived while the LLM
+		// was generating. P0 (daemon alerts) always interrupts, even
+		// when wait_for_tools is set. P1 (Discord / urgent webhook)
+		// interrupts only when wait_for_tools is false. P2–P4 wait for
+		// the next loop top. In-flight Chat is never canceled.
+		a.gatherInterruptSources()
+		interrupt := a.inbox.DrainInterrupt(a.cfg.Agent.WaitForTools)
+		hasPending := len(interrupt) > 0
 
 		switch {
 		case len(msg.ToolCalls) > 0 && hasPending:
-			// New collaborator input arrived while the model wanted to use tools.
-			// Defer the tool calls: every tool_call_id must still
+			// Higher-priority inbox item arrived while the model wanted
+			// tools. Defer the tool calls: every tool_call_id must still
 			// have a matching tool response or the next API call will
 			// fail, so we emit a "deferred" stub for each, then
-			// surface the new input. The agent can read it and decide
-			// whether the deferred actions are still appropriate.
-			a.logger.Info("collaborator message arrived during generation; deferring tool calls",
+			// surface the new input.
+			a.logger.Info("inbox item arrived during generation; deferring tool calls",
 				"tool_calls", len(msg.ToolCalls),
-				"operator_pending", len(pendingOp),
+				"interrupt_n", len(interrupt),
+				"bucket", interrupt[0].Bucket,
+				"source", interrupt[0].Source,
 			)
-			const deferredBody = "[Deferred] A collaborator message arrived before this tool call could run. Read it below and respond first. After responding, re-issue this tool call if it still makes sense, or move on if the new input changes your plan."
+			const deferredBody = "[Deferred] A higher-priority inbox item arrived before this tool call could run. Read it below and respond first. After responding, re-issue this tool call if it still makes sense, or move on if the new input changes your plan."
 			for _, tc := range msg.ToolCalls {
 				body := deferredBody
 				if scrubbed[tc.ID] {
@@ -665,11 +658,10 @@ func (a *Agent) Run(ctx context.Context, shutdownCh <-chan struct{}) error {
 				}
 				messages = append(messages, toolMessage(tc.ID, body))
 			}
-			if len(pendingOp) > 0 {
-				messages = a.appendCollaboratorMessages(messages, pendingOp)
+			messages = a.appendInboxBatch(messages, interrupt)
+			if batchHasCollaborator(interrupt) {
 				collaboratorReplyOwed = true
 			}
-			// Tool calls + new input both count as the model engaging.
 			idleStreak = 0
 
 		case len(msg.ToolCalls) > 0:
@@ -683,11 +675,11 @@ func (a *Agent) Run(ctx context.Context, shutdownCh <-chan struct{}) error {
 			idleStreak = 0
 
 		case hasPending:
-			// Text-only response with collaborator input waiting: surface it in
+			// Text-only response with an interrupt waiting: surface it in
 			// place of the continue prompt so the next turn addresses
 			// the new input naturally. Resets the idle counter.
-			if len(pendingOp) > 0 {
-				messages = a.appendCollaboratorMessages(messages, pendingOp)
+			messages = a.appendInboxBatch(messages, interrupt)
+			if batchHasCollaborator(interrupt) {
 				collaboratorReplyOwed = true
 			}
 			idleStreak = 0
@@ -1030,55 +1022,146 @@ func (a *Agent) gatherContextMemories() []bm25.Result {
 	return results
 }
 
-// injectPendingMessages drains the operator, subagent, scheduler, and
-// (when delivery=inject) peer inboxes and appends any pending entries
-// to the conversation. Returns the updated messages, whether anything
-// was injected, and whether any of that injection was collaborator
-// (human) input — used to open delivery debt in Run.
-//
-// Queues are drained on every call (rather than checking HasPending
-// first) because the read is the same primitive as the drain; there
-// is no probe-then-take race to worry about.
+// injectPendingMessages flushes adapter queues into the unified inbox,
+// then drains a bounded FIFO snapshot of the highest-priority nonempty
+// bucket. Lower buckets stay queued. Returns the updated messages,
+// whether anything was injected, and whether any of that injection was
+// collaborator (human) input — used to open delivery debt in Run.
 func (a *Agent) injectPendingMessages(messages []llm.Message) ([]llm.Message, bool, bool) {
-	var pendingOp []string
-	if a.operator != nil {
-		pendingOp = a.operator.Pending()
-	}
-	var pendingSub []subagent.Report
-	if a.subagents != nil {
-		pendingSub = a.subagents.Pending()
-	}
-	pendingScheduled := a.dueScheduledTasks()
-	var pendingPeers []peer.Message
-	if a.peers != nil {
-		pendingPeers = a.peers.Pending()
-	}
-	var pendingDaemons []daemonpkg.Alert
-	if a.daemonAlerts != nil {
-		pendingDaemons = a.daemonAlerts.Pending()
-	}
-
-	if len(pendingOp) == 0 && len(pendingSub) == 0 && len(pendingScheduled) == 0 && len(pendingPeers) == 0 && len(pendingDaemons) == 0 {
+	a.gatherAdapters()
+	batch := a.inbox.DrainHighest()
+	if len(batch) == 0 {
 		return messages, false, false
 	}
+	return a.appendInboxBatch(messages, batch), true, batchHasCollaborator(batch)
+}
 
-	collaborator := len(pendingOp) > 0
-	if collaborator {
-		messages = a.appendCollaboratorMessages(messages, pendingOp)
+// PushWebhook enqueues an authenticated HTTP inbox item. Urgent items
+// share the P1 bucket with Discord but do not open delivery debt.
+func (a *Agent) PushWebhook(text string, urgent bool) {
+	b := BucketWebhook
+	if urgent {
+		b = BucketHuman
 	}
-	if len(pendingSub) > 0 {
-		messages = a.appendSubagentReports(messages, pendingSub)
+	a.inbox.Push(Item{Bucket: b, Source: SourceWebhook, Text: text, Urgent: urgent})
+}
+
+// InboxHasPending reports leftover inbox items (webhook, overflow from
+// a bounded drain). Adapter queues are still peeked separately by sleep.
+func (a *Agent) InboxHasPending() bool {
+	return a.inbox.HasPending()
+}
+
+func (a *Agent) gatherInterruptSources() {
+	if a.operator != nil {
+		for _, t := range a.operator.Pending() {
+			a.inbox.Push(Item{Bucket: BucketHuman, Source: SourceCollaborator, Text: t})
+		}
 	}
-	if len(pendingScheduled) > 0 {
-		messages = a.appendScheduledTasks(messages, pendingScheduled)
+	if a.daemonAlerts != nil {
+		for _, al := range a.daemonAlerts.Pending() {
+			a.inbox.Push(Item{Bucket: BucketDaemon, Source: SourceDaemon, Text: al.Text, Label: al.Name, ID: al.DaemonID})
+		}
 	}
-	if len(pendingPeers) > 0 {
-		messages = a.appendPeerMessages(messages, pendingPeers)
+}
+
+func (a *Agent) gatherAdapters() {
+	a.gatherInterruptSources()
+	if a.subagents != nil {
+		for _, r := range a.subagents.Pending() {
+			errText := ""
+			if r.Err != nil {
+				errText = r.Err.Error()
+			}
+			a.inbox.Push(Item{
+				Bucket:    BucketWork,
+				Source:    SourceSubagent,
+				Text:      r.Text,
+				Label:     r.Profile,
+				ID:        r.WorkID,
+				Truncated: r.Truncated,
+				Canceled:  r.Canceled,
+				Err:       errText,
+			})
+		}
 	}
-	if len(pendingDaemons) > 0 {
-		messages = a.appendDaemonAlerts(messages, pendingDaemons)
+	for _, task := range a.dueScheduledTasks() {
+		a.inbox.Push(Item{
+			Bucket: BucketWork,
+			Source: SourceScheduled,
+			Text:   task.Prompt,
+			Label:  task.Title,
+			ID:     task.ID,
+			Kind:   string(task.Kind),
+		})
 	}
-	return messages, true, collaborator
+	if a.peers != nil {
+		for _, msg := range a.peers.Pending() {
+			a.inbox.Push(Item{Bucket: BucketPeer, Source: SourcePeer, Text: msg.Text, Label: msg.From, ID: msg.ID})
+		}
+	}
+}
+
+func (a *Agent) appendInboxBatch(messages []llm.Message, batch []Item) []llm.Message {
+	for _, it := range batch {
+		switch it.Source {
+		case SourceCollaborator:
+			messages = a.appendCollaboratorMessages(messages, []string{it.Text})
+		case SourceDaemon:
+			messages = a.appendDaemonAlerts(messages, []daemonpkg.Alert{{
+				DaemonID: it.ID,
+				Name:     it.Label,
+				Text:     it.Text,
+			}})
+		case SourceSubagent:
+			var err error
+			if it.Err != "" {
+				err = errors.New(it.Err)
+			}
+			messages = a.appendSubagentReports(messages, []subagent.Report{{
+				WorkID:    it.ID,
+				Profile:   it.Label,
+				Text:      it.Text,
+				Err:       err,
+				Canceled:  it.Canceled,
+				Truncated: it.Truncated,
+			}})
+		case SourceScheduled:
+			messages = a.appendScheduledTasks(messages, []schedule.Task{{
+				ID:     it.ID,
+				Kind:   schedule.Kind(it.Kind),
+				Title:  it.Label,
+				Prompt: it.Text,
+			}})
+		case SourcePeer:
+			messages = a.appendPeerMessages(messages, []peer.Message{{
+				From: it.Label,
+				ID:   it.ID,
+				Text: it.Text,
+			}})
+		case SourceWebhook:
+			messages = a.appendWebhookMessages(messages, []Item{it})
+		default:
+			a.logger.Warn("dropping inbox item with unknown source", "source", it.Source)
+		}
+	}
+	return messages
+}
+
+func (a *Agent) appendWebhookMessages(messages []llm.Message, pending []Item) []llm.Message {
+	for _, it := range pending {
+		kind := "Webhook"
+		if it.Urgent {
+			kind = "Urgent webhook"
+		}
+		a.logger.Info("injecting webhook into conversation", "urgent", it.Urgent)
+		messages = append(messages, llm.Message{
+			Role: llm.RoleUser,
+			Content: fmt.Sprintf("[%s - %s]\n\n%s\n\nThis arrived via the authenticated inbox webhook. It is not a collaborator message; do not use send_message unless the content asks you to notify someone.",
+				kind, time.Now().Format(time.RFC1123), it.Text),
+		})
+	}
+	return messages
 }
 
 // appendDaemonAlerts formats drained daemon alerts as user turns.

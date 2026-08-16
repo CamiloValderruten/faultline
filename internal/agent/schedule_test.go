@@ -86,6 +86,53 @@ func TestInjectPendingMessagesIncludesScheduledTasks(t *testing.T) {
 	}
 }
 
+func TestInjectPendingMessagesDrainsOnlyHighestBucket(t *testing.T) {
+	a := newTestAgent()
+	a.operator = &scriptedOperator{batches: [][]string{{"ping"}}}
+	a.scheduler = &fakeScheduler{results: [][]schedule.Task{
+		{{
+			ID:     "task-123",
+			Kind:   schedule.KindOnce,
+			Title:  "Follow up",
+			Prompt: "Check status.",
+		}},
+	}}
+
+	messages, injected, collab := a.injectPendingMessages(nil)
+	if !injected || !collab {
+		t.Fatalf("injected=%v collab=%v, want both true", injected, collab)
+	}
+	if len(messages) != 1 {
+		t.Fatalf("messages len = %d, want 1 (scheduled stays queued)", len(messages))
+	}
+	if strings.Contains(messages[0].Content, "scheduled task") {
+		t.Fatal("scheduled task must not share the collaborator turn")
+	}
+	if !a.inbox.HasPending() {
+		t.Fatal("scheduled task should remain in a lower bucket")
+	}
+
+	messages, injected, collab = a.injectPendingMessages(nil)
+	if !injected || collab {
+		t.Fatalf("second drain injected=%v collab=%v, want scheduled only", injected, collab)
+	}
+	if !strings.Contains(messages[0].Content, "This is a scheduled task you created earlier") {
+		t.Fatalf("scheduled wrapper missing:\n%s", messages[0].Content)
+	}
+}
+
+func TestInjectPendingMessagesWebhookDoesNotOpenDebt(t *testing.T) {
+	a := newTestAgent()
+	a.PushWebhook("motion in kitchen", true)
+	messages, injected, collab := a.injectPendingMessages(nil)
+	if !injected || collab {
+		t.Fatalf("injected=%v collab=%v, want injected without debt", injected, collab)
+	}
+	if !strings.Contains(messages[0].Content, "Urgent webhook") {
+		t.Fatalf("missing webhook wrapper:\n%s", messages[0].Content)
+	}
+}
+
 func TestRunDoesNotDeferToolCallsForScheduledTasks(t *testing.T) {
 	scheduler := &fakeScheduler{results: [][]schedule.Task{
 		nil,

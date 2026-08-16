@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/CamiloValderruten/faultline/internal/config"
+	"github.com/CamiloValderruten/faultline/internal/daemon"
 	"github.com/CamiloValderruten/faultline/internal/llm"
 )
 
@@ -113,5 +114,88 @@ func TestWaitForToolsTrueRunsToolsBeforeInject(t *testing.T) {
 	}
 	if !sawFollowUp {
 		t.Fatal("expected follow-up injected on a later turn")
+	}
+}
+
+type afterFirstChatDaemons struct {
+	mu      sync.Mutex
+	chat    *scriptedChat
+	alert   daemon.Alert
+	drained bool
+}
+
+func (d *afterFirstChatDaemons) Pending() []daemon.Alert {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	d.chat.mu.Lock()
+	seen := len(d.chat.seen)
+	d.chat.mu.Unlock()
+	if seen == 0 || d.drained {
+		return nil
+	}
+	d.drained = true
+	return []daemon.Alert{d.alert}
+}
+
+func (d *afterFirstChatDaemons) HasPending() bool {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	return !d.drained
+}
+
+func TestWaitForToolsTrueDefersToolsForDaemonAlert(t *testing.T) {
+	chat := &scriptedChat{responses: []*llm.ChatResponse{
+		toolCallResponse("skill_activate", `{"name":"finances"}`),
+		textOnlyResponse("acked cry"),
+	}}
+	tools := &recordingTools{results: map[string]string{
+		"skill_activate": "skill loaded",
+	}}
+	daemons := &afterFirstChatDaemons{chat: chat, alert: daemon.Alert{
+		DaemonID: "d1",
+		Name:     "baby",
+		Text:     "cry",
+	}}
+	cfg := config.Default()
+	cfg.Limits.RecentMemoryChars = 1024
+	cfg.Agent.WaitForTools = true
+	memory := newAgentTestMemory()
+	memory.files["prompts/migrations.md"] = `# Prompt migrations applied
+
+## Applied
+
+- 000 add-untrusted-content-convention 2026-05-01T00:00:00Z
+- 001 autonomy-prompts-v1 2026-05-01T00:00:00Z
+`
+	agent := New(cfg, Deps{
+		Chat:     chat,
+		Memory:   memory,
+		Search:   noopSearcher{},
+		Tools:    tools,
+		State:    emptyStateStore{},
+		Daemons:  daemons,
+		MaxTurns: 2,
+	}, newTestLogger())
+
+	if err := agent.Run(context.Background(), make(chan struct{})); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if tools.execCount["skill_activate"] != 0 {
+		t.Fatalf("skill_activate executions = %d, want 0 (P0 defers tools)", tools.execCount["skill_activate"])
+	}
+	var sawDeferred, sawCry bool
+	for _, m := range chat.seen {
+		if m.Role == llm.RoleTool && strings.Contains(m.Content, "[Deferred]") {
+			sawDeferred = true
+		}
+		if m.Role == llm.RoleUser && strings.Contains(m.Content, "cry") {
+			sawCry = true
+		}
+	}
+	if !sawDeferred {
+		t.Fatal("expected [Deferred] tool stub for P0 interrupt")
+	}
+	if !sawCry {
+		t.Fatal("expected daemon alert injected after Chat")
 	}
 }

@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -459,5 +460,23 @@ enabled = true
 	}
 	if !cfg.Daemons.Active() || cfg.Daemons.Max != 5 {
 		t.Fatalf("daemons=%+v", cfg.Daemons)
+	}
+}
+
+func TestLoad_WebhookRequiresToken(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "webhook.toml")
+	if err := os.WriteFile(path, []byte(`
+[api]
+url = "http://localhost/v1"
+[webhook]
+enabled = true
+bind = "127.0.0.1:8760"
+`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	_, err := Load(path)
+	if err == nil || !strings.Contains(err.Error(), "token") {
+		t.Fatalf("err=%v, want token required", err)
 	}
 }

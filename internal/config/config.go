@@ -69,6 +69,11 @@ type Config struct {
 	// bind. Separate from [admin] so the public origin never shares
 	// an authenticated mux.
 	Publish PublishConfig `toml:"publish"`
+
+	// Webhook is optional; when Enabled, an authenticated HTTP
+	// listener accepts POST /v1/inbox into the agent priority inbox.
+	// Daemons must not use this — they keep writing alerts.jsonl.
+	Webhook WebhookConfig `toml:"webhook"`
 }
 
 // APIConfig holds LLM API connection settings.
@@ -593,6 +598,19 @@ func (p PublishConfig) Active() bool {
 	return p.Enabled && p.Bind != ""
 }
 
+// WebhookConfig is the authenticated inbox HTTP listener for Home
+// Assistant, n8n, Shortcuts, and similar push sources.
+type WebhookConfig struct {
+	Enabled bool   `toml:"enabled"`
+	Bind    string `toml:"bind"`
+	Token   string `toml:"token"`
+}
+
+// Active reports whether the inbox webhook should be wired up.
+func (w WebhookConfig) Active() bool {
+	return w.Enabled && strings.TrimSpace(w.Bind) != "" && strings.TrimSpace(w.Token) != ""
+}
+
 // Peer delivery modes for [peers].delivery.
 const (
 	PeersDeliveryPull   = "pull"
@@ -782,6 +800,10 @@ func Default() *Config {
 			Enabled: false,
 			Bind:    "127.0.0.1:8744",
 		},
+		Webhook: WebhookConfig{
+			Enabled: false,
+			Bind:    "127.0.0.1:8760",
+		},
 	}
 }
 
@@ -887,6 +909,10 @@ func Load(path string) (*Config, error) {
 	if cfg.Publish.Bind == "" {
 		cfg.Publish.Bind = "127.0.0.1:8744"
 	}
+
+	if cfg.Webhook.Bind == "" {
+		cfg.Webhook.Bind = "127.0.0.1:8760"
+	}
 	if cfg.Peers.InboxFile == "" {
 		cfg.Peers.InboxFile = "./peer-inbox.json"
 	}
@@ -927,6 +953,15 @@ func Load(path string) (*Config, error) {
 
 	if cfg.Telegram.Enabled() && cfg.Discord.Enabled() {
 		return nil, fmt.Errorf("configure only one collaborator channel: [telegram] or [discord], not both")
+	}
+
+	if cfg.Webhook.Enabled {
+		if strings.TrimSpace(cfg.Webhook.Bind) == "" {
+			return nil, fmt.Errorf("[webhook] bind is required when enabled")
+		}
+		if strings.TrimSpace(cfg.Webhook.Token) == "" {
+			return nil, fmt.Errorf("[webhook] token is required when enabled")
+		}
 	}
 
 	return cfg, nil

@@ -1369,6 +1369,7 @@ type Executor struct {
 	currentTokens       int
 	limits              config.LimitsConfig
 	maxSleep            time.Duration // upper bound for the `sleep` tool
+	inboxPending        func() bool   // leftover webhook / bounded-drain items; nil-safe
 
 	// Subagent wiring (optional). subagentMgr is set on the primary
 	// Executor when [subagent] is enabled; subagentReportFn is set on
@@ -1563,6 +1564,14 @@ func (te *Executor) reindexDir(dirPath string) {
 // Called by the agent before each batch of tool executions.
 func (te *Executor) SetContextInfo(currentTokens int) {
 	te.currentTokens = currentTokens
+}
+
+// SetInboxPending wires the agent inbox peek used by sleep. Call after
+// Agent.New; the executor is constructed first.
+func (te *Executor) SetInboxPending(fn func() bool) {
+	if te != nil {
+		te.inboxPending = fn
+	}
 }
 
 // summaryArgsBudget / summaryResultBudget cap the field sizes copied

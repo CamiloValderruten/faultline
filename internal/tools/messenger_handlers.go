@@ -239,6 +239,11 @@ func (te *Executor) sleep(ctx context.Context, argsJSON string) string {
 			"requested_s", args.Seconds)
 		return clampNote + "Did not sleep: a daemon alert is already pending. Handle it before sleeping."
 	}
+	if te.inboxPending != nil && te.inboxPending() {
+		te.logger.Info("sleep skipped: inbox item already pending",
+			"requested_s", args.Seconds)
+		return clampNote + "Did not sleep: an inbox item is already pending. Handle it before sleeping."
+	}
 
 	te.logger.Info("sleep started", "requested_s", args.Seconds, "actual_s", int(target.Seconds()))
 
@@ -278,6 +283,11 @@ func (te *Executor) sleep(ctx context.Context, argsJSON string) string {
 				elapsed := time.Since(start).Round(time.Second)
 				te.logger.Info("sleep interrupted by daemon alert", "elapsed_s", int(elapsed.Seconds()))
 				return clampNote + fmt.Sprintf("Slept for %s then interrupted: daemon alert pending.", elapsed)
+			}
+			if te.inboxPending != nil && te.inboxPending() {
+				elapsed := time.Since(start).Round(time.Second)
+				te.logger.Info("sleep interrupted by inbox item", "elapsed_s", int(elapsed.Seconds()))
+				return clampNote + fmt.Sprintf("Slept for %s then interrupted: inbox item pending.", elapsed)
 			}
 			// Belt-and-braces: if the timer fires between selects somehow,
 			// still exit at the deadline rather than oversleeping.

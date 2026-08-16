@@ -23,6 +23,7 @@ func newTestAgent() *Agent {
 		cfg:       cfg,
 		logger:    slog.New(slog.NewTextHandler(io.Discard, nil)),
 		inspector: newInspectorState(time.Now()),
+		inbox:     newInbox(),
 	}
 	return a
 }

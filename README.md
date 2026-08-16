@@ -247,7 +247,7 @@ The default contents of these prompts live in `internal/prompts/templates/*.md` 
 
 ### Telegram Integration
 
-Bidirectional communication with a human collaborator via Telegram or Discord. Incoming messages never cancel an in-flight LLM request. By default (`wait_for_tools = false`), if the agent was about to use tools when a message arrived, those calls are deferred and the agent can choose whether to re-issue them after reading the new input. With `wait_for_tools = true`, messages stay queued until the current turn's tools finish. Outgoing Telegram messages are converted to MarkdownV2 with auto-chunking for the 4096-character limit, falling back to plain text on conversion failure.
+Bidirectional communication with a human collaborator via Telegram or Discord. Incoming events never cancel an in-flight LLM request. They enter a priority inbox (daemon alerts first, then collaborator messages, then subagent/cron, peers, and webhook). By default (`wait_for_tools = false`), P1 collaborator messages that arrive during generation may defer pending tool calls. With `wait_for_tools = true`, P1 stays queued until tools finish; P0 daemon alerts still interrupt after Chat. Outgoing Telegram messages are converted to MarkdownV2 with auto-chunking for the 4096-character limit, falling back to plain text on conversion failure.
 
 ### Multi-runtime Sandbox
 
