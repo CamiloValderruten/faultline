@@ -618,7 +618,8 @@ bind = "127.0.0.1:8744"
 # alerts.jsonl (P0); do not HTTP them here.
 #
 # Bind loopback and tunnel if you need LAN/WAN reachability. Token is
-# required when enabled.
+# required when enabled. In Docker, bind 0.0.0.0:<port> and publish
+# 127.0.0.1:<port>:<port> on the host (see docker-compose.yml).
 # ---------------------------------------------------------------------------
 [webhook]
 enabled = false

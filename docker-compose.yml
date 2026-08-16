@@ -35,6 +35,8 @@ services:
     ports:
       # HTML publishing harness — Cloudflare Tunnel via host.docker.internal
       - "8750:8750"
+      # Authenticated inbox webhook — loopback only (HA / n8n / Shortcuts)
+      - "127.0.0.1:8760:8760"
     volumes:
       - /home/camilovalderruten/faultline/arlo.config.toml:/config/config.toml:ro
       - /home/camilovalderruten/.faultline/agents/arlo:/agent:rw
