@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/CamiloValderruten/faultline/internal/messaging"
 	"github.com/bwmarrin/discordgo"
@@ -69,11 +70,32 @@ func New(token, channelID string, logger *slog.Logger) (*Bot, error) {
 }
 
 // Start opens the Discord gateway and blocks until ctx is canceled.
+// If the initial connection fails (e.g. DNS or network not ready during container boot),
+// it retries with exponential backoff until connected or ctx is canceled.
 func (b *Bot) Start(ctx context.Context) {
-	if err := b.session.Open(); err != nil {
-		b.logger.Error("discord gateway open failed", "error", err)
-		return
+	backoff := time.Second
+	const maxBackoff = 30 * time.Second
+
+	for {
+		if ctx.Err() != nil {
+			return
+		}
+		if err := b.session.Open(); err != nil {
+			b.logger.Error("discord gateway open failed, will retry", "error", err, "retry_in", backoff)
+			select {
+			case <-ctx.Done():
+				return
+			case <-time.After(backoff):
+				backoff *= 2
+				if backoff > maxBackoff {
+					backoff = maxBackoff
+				}
+				continue
+			}
+		}
+		break
 	}
+
 	user := ""
 	if b.session.State != nil && b.session.State.User != nil {
 		user = b.session.State.User.Username

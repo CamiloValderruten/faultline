@@ -234,6 +234,33 @@ func isRateLimited(err error) bool {
 	return strings.Contains(msg, "http 429") || strings.Contains(msg, "rate limit")
 }
 
+// isTransientLLMError reports whether err looks like a temporary network
+// failure, connection reset, or 5xx server error from an LLM provider that
+// should be retried with backoff rather than immediately terminating the loop.
+func isTransientLLMError(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "connection reset by peer") ||
+		strings.Contains(msg, "eof") ||
+		strings.Contains(msg, "broken pipe") ||
+		strings.Contains(msg, "connection refused") ||
+		strings.Contains(msg, "no route to host") ||
+		strings.Contains(msg, "server misbehaving") ||
+		strings.Contains(msg, "http 500") ||
+		strings.Contains(msg, "http 502") ||
+		strings.Contains(msg, "http 503") ||
+		strings.Contains(msg, "http 504") ||
+		strings.Contains(msg, "bad gateway") ||
+		strings.Contains(msg, "service unavailable") ||
+		strings.Contains(msg, "gateway timeout") ||
+		strings.Contains(msg, "internal server error") ||
+		strings.Contains(msg, "i/o timeout") ||
+		strings.Contains(msg, "context deadline exceeded") ||
+		strings.Contains(msg, "tls handshake timeout")
+}
+
 // toolMessage builds a tool-role chat message satisfying a tool_call_id.
 // The body is prefixed with an RFC1123 timestamp so the model has a
 // consistent temporal frame for every tool result it sees.
@@ -598,6 +625,24 @@ func (a *Agent) Run(ctx context.Context, shutdownCh <-chan struct{}) error {
 					a.setPhase(PhaseIdle)
 					continue
 				}
+			}
+			// Transient network, connection reset, timeout, or 5xx errors from
+			// the provider should back off and retry rather than terminating the
+			// process and triggering cold-start container restart cycles.
+			if isTransientLLMError(err) {
+				a.recordError(err)
+				a.logger.Warn("llm transient error, backing off",
+					"error", err, "backoff", 10*time.Second)
+				a.setPhase(PhaseIdle)
+				select {
+				case <-ctx.Done():
+					return ctx.Err()
+				case <-shutdownCh:
+					a.setPhase(PhaseSaving)
+					return a.handleShutdown(ctx, messages, toolDefs, prompts)
+				case <-time.After(10 * time.Second):
+				}
+				continue
 			}
 			return fmt.Errorf("llm chat: %w", err)
 		}
