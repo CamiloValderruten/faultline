@@ -237,8 +237,19 @@ func (a *Agent) buildFreshSystemMessage(prompts map[string]string) llm.Message {
 			subagentCatalog = append(subagentCatalog, p.ToCatalog())
 		}
 	}
+	basePrompt := prompts["system"]
+	identity := prompts["identity-core"]
+	overlay := prompts["agent"]
+	if a.systemPromptOverride != "" {
+		basePrompt = a.systemPromptOverride
+		identity = ""
+		overlay = ""
+	}
 	body := prompt.BuildCycleContext(
-		prompts["system"], memories, skillCatalog, subagentCatalog,
+		basePrompt,
+		identity,
+		overlay,
+		memories, skillCatalog, subagentCatalog,
 		a.gatherCollaboratorGuide(),
 		time.Now(), a.cfg.Limits.RecentMemoryChars,
 	)

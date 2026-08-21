@@ -132,6 +132,17 @@ func (te *Executor) skillInstall(ctx context.Context, argsJSON string) string {
 		return fmt.Sprintf("Error: derived name %q is invalid: %s. Pass an explicit `name` parameter that matches the spec (lowercase letters/digits/hyphens, no leading/trailing/consecutive hyphens).", desiredName, err)
 	}
 	dest := filepath.Join(te.skillsRoot, desiredName)
+	if te.skillsRoot == "" {
+		return "Error: no user skills directory configured ([skills] dir). System skills are read-only; set dir to enable installs."
+	}
+	if te.skills != nil {
+		if existing, ok := te.skills.Lookup(desiredName); ok {
+			if existing.Source == skills.SourceSystem {
+				return fmt.Sprintf("Error: %q is a system skill (read-only). Install under a different name — user skills cannot replace system skills.", desiredName)
+			}
+			return fmt.Sprintf("Error: a skill named %q already exists. Delete it from the user skills dir first if you want to reinstall.", desiredName)
+		}
+	}
 	if _, err := os.Stat(dest); err == nil {
 		return fmt.Sprintf("Error: a skill named %q already exists at %s. Delete it manually first if you want to reinstall.", desiredName, dest)
 	}

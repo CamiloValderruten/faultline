@@ -29,6 +29,7 @@
           <thead>
             <tr>
               <th class="w-32">Enabled</th>
+              <th class="w-24">Source</th>
               <th>Name</th>
               <th>Description</th>
             </tr>
@@ -48,6 +49,15 @@
                          onchange="this.form.requestSubmit();">
                 </form>
               </td>
+              <td>
+                {{if eq .Source "system"}}
+                <span class="badge badge-outline badge-sm">system</span>
+                {{else if eq .Source "user"}}
+                <span class="badge badge-ghost badge-sm">user</span>
+                {{else}}
+                <span class="opacity-50">—</span>
+                {{end}}
+              </td>
               <td class="font-mono text-sm">{{.Name}}</td>
               <td class="text-sm opacity-80">{{.Description}}</td>
             </tr>
@@ -57,9 +67,10 @@
       </div>
       {{else}}
       <p class="opacity-60 italic text-sm">
-        No skills discovered. Drop a skill folder into your skills
-        root and the agent will pick it up at the next context
-        rebuild.
+        No skills discovered. Mount system skills via
+        <code>[skills] system_dir</code> and/or drop folders into the
+        user <code>dir</code>; the agent picks them up at the next
+        context rebuild.
       </p>
       {{end}}
     {{else}}

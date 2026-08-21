@@ -66,6 +66,33 @@ func TestMigration001ShipsAutonomyPrompts(t *testing.T) {
 	}
 }
 
+func TestMigration002ShipsPromptHierarchy(t *testing.T) {
+	migs, err := LoadMigrations()
+	if err != nil {
+		t.Fatalf("LoadMigrations: %v", err)
+	}
+	var m *Migration
+	for i := range migs {
+		if migs[i].ID == 2 {
+			m = &migs[i]
+			break
+		}
+	}
+	if m == nil {
+		t.Fatalf("migration 002 not loaded; got ids: %v", ids(migs))
+	}
+	for _, want := range []string{
+		"already applied",
+		"prompts/agent.md",
+		"Leave every other file untouched",
+		"seeded prompts/agent.md",
+	} {
+		if !strings.Contains(m.Body, want) {
+			t.Errorf("migration 002 body missing %q", want)
+		}
+	}
+}
+
 func ids(ms []Migration) []int {
 	out := make([]int, len(ms))
 	for i, m := range ms {

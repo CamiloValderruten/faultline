@@ -38,9 +38,18 @@ const MaxResourceListing = 50
 // startup and on context rebuild). All methods are safe for concurrent
 // use; the agent's Reload-from-rebuild path serializes naturally with
 // the loop, but tools may call List/Get/Read mid-turn.
+//
+// Two roots are supported:
+//   - systemRoot: shipped / read-only skills (repo skills/, image bake)
+//   - userRoot: operator drops and skill_install target
+//
+// On name collision the first root wins (system is scanned before
+// user) and a warning is logged — user skills cannot silently replace
+// shipped system skills. skill_install always writes into userRoot only.
 type Store struct {
-	root   string
-	logger *slog.Logger
+	userRoot   string
+	systemRoot string
+	logger     *slog.Logger
 
 	mu      sync.RWMutex
 	catalog map[string]*skills.Skill
@@ -54,19 +63,26 @@ type Store struct {
 	disabled  map[string]bool
 }
 
-// New constructs a Store rooted at dir. Reload is called once
-// synchronously so the catalog is populated before the constructor
-// returns. A missing root directory is not a fatal error -- the
-// catalog stays empty and the operator can drop skills in later, with
-// a Reload at the next context rebuild picking them up.
-func New(dir string, logger *slog.Logger) (*Store, error) {
-	abs, err := filepath.Abs(dir)
-	if err != nil {
-		return nil, fmt.Errorf("resolve skills root: %w", err)
+// New constructs a Store from optional user and system skill roots.
+// Either path may be empty; at least one should be set by the caller
+// when skills are Active. Reload runs once before return. A missing
+// root directory is not fatal — that side of the catalog stays empty
+// until skills appear and the next Reload picks them up.
+func New(userDir, systemDir string, logger *slog.Logger) (*Store, error) {
+	s := &Store{logger: logger}
+	if userDir != "" {
+		abs, err := filepath.Abs(userDir)
+		if err != nil {
+			return nil, fmt.Errorf("resolve user skills root: %w", err)
+		}
+		s.userRoot = abs
 	}
-	s := &Store{
-		root:   abs,
-		logger: logger,
+	if systemDir != "" {
+		abs, err := filepath.Abs(systemDir)
+		if err != nil {
+			return nil, fmt.Errorf("resolve system skills root: %w", err)
+		}
+		s.systemRoot = abs
 	}
 	if err := s.Reload(); err != nil {
 		return nil, err
@@ -74,94 +90,33 @@ func New(dir string, logger *slog.Logger) (*Store, error) {
 	return s, nil
 }
 
-// Root returns the absolute path of the skills root directory.
+// Root returns the absolute user skills root (skill_install target).
+// Empty when no user root is configured.
 func (s *Store) Root() string {
-	return s.root
+	return s.userRoot
 }
 
-// Reload rescans the skills root directory and rebuilds the in-memory
-// catalog. Called at startup and again on every context rebuild so
-// operator-dropped skills appear without a process restart.
+// SystemRoot returns the absolute system skills root, or empty.
+func (s *Store) SystemRoot() string {
+	return s.systemRoot
+}
+
+// Reload rescans system then user skill roots and rebuilds the
+// in-memory catalog. Called at startup and again on every context
+// rebuild so operator-dropped skills appear without a process restart.
 //
 // Reload is best-effort: per-skill parse errors are logged and the
 // problem skill is dropped from the catalog, but the operation as a
 // whole only fails on filesystem-level issues (e.g. unreadable root).
 // A missing root is treated as "no skills" rather than an error.
 func (s *Store) Reload() error {
-	info, err := os.Stat(s.root)
-	if errors.Is(err, os.ErrNotExist) {
-		// No skills root yet -- equivalent to an empty catalog. Operator
-		// can mkdir it later; next Reload will pick up its contents.
-		s.mu.Lock()
-		s.catalog = nil
-		s.order = nil
-		s.mu.Unlock()
-		return nil
-	}
-	if err != nil {
-		return fmt.Errorf("stat skills root: %w", err)
-	}
-	if !info.IsDir() {
-		return fmt.Errorf("skills root %q is not a directory", s.root)
-	}
-
-	entries, err := os.ReadDir(s.root)
-	if err != nil {
-		return fmt.Errorf("read skills root: %w", err)
-	}
-
 	catalog := make(map[string]*skills.Skill)
-	for _, e := range entries {
-		if !e.IsDir() {
-			continue
-		}
-		name := e.Name()
-		// Skip dotfiles and the conventional "exclude" patterns. A
-		// .git directory at the skills root happens when the operator
-		// keeps their skills under git.
-		if strings.HasPrefix(name, ".") {
-			continue
-		}
-		dir := filepath.Join(s.root, name)
-		mdPath := filepath.Join(dir, "SKILL.md")
-		raw, err := os.ReadFile(mdPath)
-		if err != nil {
-			if errors.Is(err, os.ErrNotExist) {
-				// Subdir with no SKILL.md isn't a skill; ignore quietly.
-				continue
-			}
-			s.logger.Warn("skills: SKILL.md unreadable; skipping",
-				slog.String("name", name),
-				slog.String("err", err.Error()))
-			continue
-		}
 
-		sk, err := loadSkill(raw, dir, mdPath, name)
-		if err != nil {
-			s.logger.Warn("skills: skipping malformed skill",
-				slog.String("name", name),
-				slog.String("err", err.Error()))
-			continue
-		}
-
-		// Per the spec: warn on collisions but be deterministic. Within
-		// a single root we shouldn't hit collisions because directory
-		// names must be unique on the filesystem; this is here in case
-		// loadSkill ever rewrites the name (currently it doesn't).
-		if existing, exists := catalog[sk.Name]; exists {
-			s.logger.Warn("skills: name collision; keeping first found",
-				slog.String("name", sk.Name),
-				slog.String("kept", existing.Dir),
-				slog.String("dropped", sk.Dir))
-			continue
-		}
-		catalog[sk.Name] = sk
-
-		for _, d := range sk.Diagnostics {
-			s.logger.Warn("skills: diagnostic during load",
-				slog.String("name", sk.Name),
-				slog.String("msg", d))
-		}
+	if err := s.scanRoot(s.systemRoot, skills.SourceSystem, catalog); err != nil {
+		return err
+	}
+	if err := s.scanRoot(s.userRoot, skills.SourceUser, catalog); err != nil {
+		return err
 	}
 
 	order := make([]string, 0, len(catalog))
@@ -177,7 +132,89 @@ func (s *Store) Reload() error {
 
 	s.logger.Info("skills: catalog loaded",
 		slog.Int("count", len(catalog)),
-		slog.String("root", s.root))
+		slog.String("user_root", s.userRoot),
+		slog.String("system_root", s.systemRoot))
+	return nil
+}
+
+// scanRoot walks one skills root and merges discovered skills into
+// catalog. Empty root or missing directory is a no-op. On name
+// collision the first root wins (system is scanned before user) —
+// fail-closed so user skills cannot silently replace system ones.
+func (s *Store) scanRoot(root, source string, catalog map[string]*skills.Skill) error {
+	if root == "" {
+		return nil
+	}
+	info, err := os.Stat(root)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("stat skills root %q: %w", root, err)
+	}
+	if !info.IsDir() {
+		return fmt.Errorf("skills root %q is not a directory", root)
+	}
+
+	entries, err := os.ReadDir(root)
+	if err != nil {
+		return fmt.Errorf("read skills root %q: %w", root, err)
+	}
+
+	for _, e := range entries {
+		if !e.IsDir() {
+			continue
+		}
+		name := e.Name()
+		// Skip dotfiles. A .git directory at the skills root happens
+		// when the operator keeps their skills under git.
+		if strings.HasPrefix(name, ".") {
+			continue
+		}
+		dir := filepath.Join(root, name)
+		mdPath := filepath.Join(dir, "SKILL.md")
+		raw, err := os.ReadFile(mdPath)
+		if err != nil {
+			if errors.Is(err, os.ErrNotExist) {
+				continue
+			}
+			s.logger.Warn("skills: SKILL.md unreadable; skipping",
+				slog.String("name", name),
+				slog.String("source", source),
+				slog.String("err", err.Error()))
+			continue
+		}
+
+		sk, err := loadSkill(raw, dir, mdPath, name)
+		if err != nil {
+			s.logger.Warn("skills: skipping malformed skill",
+				slog.String("name", name),
+				slog.String("source", source),
+				slog.String("err", err.Error()))
+			continue
+		}
+		sk.Source = source
+
+		if existing, exists := catalog[sk.Name]; exists {
+			// Fail closed: never let a user skill silently replace a
+			// system skill. Keep the first (system) entry.
+			s.logger.Warn("skills: name collision; keeping first found (fail-closed)",
+				slog.String("name", sk.Name),
+				slog.String("kept", existing.Dir),
+				slog.String("kept_source", existing.Source),
+				slog.String("dropped", sk.Dir),
+				slog.String("dropped_source", source))
+			continue
+		}
+		catalog[sk.Name] = sk
+
+		for _, d := range sk.Diagnostics {
+			s.logger.Warn("skills: diagnostic during load",
+				slog.String("name", sk.Name),
+				slog.String("source", source),
+				slog.String("msg", d))
+		}
+	}
 	return nil
 }
 
@@ -253,6 +290,19 @@ func (s *Store) Get(name string) (skills.Skill, error) {
 		return skills.Skill{}, fmt.Errorf("%w: %q", ErrNotFound, name)
 	}
 	return *sk, nil
+}
+
+// Lookup returns the catalog entry for name regardless of disabled
+// state. Used by skill_install to refuse clobbering system skills
+// even when the operator has toggled them off.
+func (s *Store) Lookup(name string) (skills.Skill, bool) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	sk, ok := s.catalog[name]
+	if !ok {
+		return skills.Skill{}, false
+	}
+	return *sk, true
 }
 
 // Read returns the contents of a resource file inside the named

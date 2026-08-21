@@ -810,10 +810,21 @@ func (a *Agent) initializeContext() ([]llm.Message, map[string]string, int, erro
 	collaboratorGuide := a.gatherCollaboratorGuide()
 	now := time.Now()
 	basePrompt := prompts["system"]
+	identity := prompts["identity-core"]
+	overlay := prompts["agent"]
 	if a.systemPromptOverride != "" {
 		basePrompt = a.systemPromptOverride
+		// Subagents get an explicit task prompt — not the primary persona.
+		identity = ""
+		overlay = ""
 	}
-	fullSystemPrompt := prompt.BuildCycleContext(basePrompt, memories, skillCatalog, subagentCatalog, collaboratorGuide, now, a.cfg.Limits.RecentMemoryChars)
+	fullSystemPrompt := prompt.BuildCycleContext(
+		basePrompt,
+		identity,
+		overlay,
+		memories, skillCatalog, subagentCatalog, collaboratorGuide, now,
+		a.cfg.Limits.RecentMemoryChars,
+	)
 	systemMsg := llm.Message{
 		Role:    llm.RoleSystem,
 		Content: fullSystemPrompt,
@@ -1000,7 +1011,21 @@ func (a *Agent) rebuildContext(summary string) ([]llm.Message, map[string]string
 	subagentCatalog := a.gatherSubagentCatalog()
 	collaboratorGuide := a.gatherCollaboratorGuide()
 	now := time.Now()
-	fullSystemPrompt := prompt.BuildCycleContext(prompts["system"], memories, skillCatalog, subagentCatalog, collaboratorGuide, now, a.cfg.Limits.RecentMemoryChars)
+	basePrompt := prompts["system"]
+	identity := prompts["identity-core"]
+	overlay := prompts["agent"]
+	if a.systemPromptOverride != "" {
+		basePrompt = a.systemPromptOverride
+		identity = ""
+		overlay = ""
+	}
+	fullSystemPrompt := prompt.BuildCycleContext(
+		basePrompt,
+		identity,
+		overlay,
+		memories, skillCatalog, subagentCatalog, collaboratorGuide, now,
+		a.cfg.Limits.RecentMemoryChars,
+	)
 
 	messages := []llm.Message{
 		{Role: llm.RoleSystem, Content: fullSystemPrompt},
@@ -1027,9 +1052,13 @@ func (a *Agent) rebuildContext(summary string) ([]llm.Message, map[string]string
 }
 
 // isOperationalFile returns true for files that are loaded separately
-// (prompts, trash) and should not be surfaced as memories.
+// into the system message (prompts/, identity/) or trash, and should
+// not be double-surfaced under Recent Memories.
 func isOperationalFile(path string) bool {
 	if strings.HasPrefix(path, "prompts/") {
+		return true
+	}
+	if strings.HasPrefix(path, "identity/") {
 		return true
 	}
 	if fs.IsTrashPath(path) {

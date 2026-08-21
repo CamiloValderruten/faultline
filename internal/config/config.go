@@ -390,32 +390,37 @@ func (e EmbeddingsConfig) Active() bool {
 }
 
 // SkillsConfig holds Agent Skills settings. When Enabled, Faultline
-// scans the Dir directory for skill folders (each containing a
-// SKILL.md), injects their name + description into the system prompt
-// at startup and on context rebuild, and advertises skill_activate,
-// skill_read, skill_execute, and skill_work_read tools to the LLM.
+// discovers skills from optional system and user roots, injects their
+// name + description into the system prompt at startup and on context
+// rebuild, and advertises skill_activate / skill_read / skill_execute /
+// skill_work_read tools to the LLM.
 //
-// Skills are operator-supplied and implicitly trusted: anything the
-// operator drops into Dir is fair game for the agent to load and
-// execute. Skill execution always runs through the Docker sandbox
-// with a per-call /work scratch directory; the sandbox feature must
-// be enabled separately for skill_execute to function.
+// SystemDir is the shipped/read-only root (repo skills/, compose :ro
+// mount). Dir is the writable user root (operator drops + skill_install).
+// On name collision the system skill wins (fail-closed).
+//
+// Skill execution always runs through the Docker sandbox with a
+// per-call /work scratch directory; the sandbox feature must be
+// enabled separately for skill_execute to function.
 type SkillsConfig struct {
 	// Enabled toggles skill discovery and the skill_* tools.
 	Enabled bool `toml:"enabled"`
 
-	// Dir is the root directory under which each skill lives in its
-	// own subfolder, e.g. <Dir>/<skill-name>/SKILL.md. Defaults to
-	// "./skills". Created lazily by the operator; a missing directory
-	// is not an error -- the catalog stays empty until skills appear.
+	// Dir is the user/writable skills root, e.g. <Dir>/<name>/SKILL.md.
+	// Defaults to "./skills". skill_install writes here. A missing
+	// directory is not an error — that side of the catalog stays empty.
 	Dir string `toml:"dir"`
+
+	// SystemDir is the optional shipped skills root. Empty disables
+	// system skills. Same layout as Dir.
+	SystemDir string `toml:"system_dir"`
 
 	// InstallEnabled gates the skill_install tool. When false (the
 	// default), the agent cannot install skills autonomously and the
 	// tool is not advertised at all. When true, the agent can fetch
 	// skills from tarball URLs or git repositories into Dir; this
 	// gives the agent significant filesystem and network capability,
-	// so opt in deliberately.
+	// so opt in deliberately. Requires Dir to be set.
 	InstallEnabled bool `toml:"install_enabled"`
 }
 
@@ -423,7 +428,7 @@ type SkillsConfig struct {
 // pattern used by EmbeddingsConfig.Active so callers don't have to
 // check both Enabled and the minimum required fields.
 func (s SkillsConfig) Active() bool {
-	return s.Enabled && s.Dir != ""
+	return s.Enabled && (s.Dir != "" || s.SystemDir != "")
 }
 
 // SubagentConfig holds settings for subagent delegation. When

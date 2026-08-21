@@ -172,6 +172,7 @@ func newDeliveryDebtAgent(chat ChatModel, tools Tools, op Operator, maxTurns int
 
 - 000 add-untrusted-content-convention 2026-05-01T00:00:00Z
 - 001 autonomy-prompts-v1 2026-05-01T00:00:00Z
+- 002 prompt_hierarchy_v1 2026-05-01T00:00:00Z
 `
 	cfg := config.Default()
 	cfg.Limits.RecentMemoryChars = 1024

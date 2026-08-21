@@ -12,7 +12,7 @@ import (
 
 func TestBuildCycleContext_NoMemories(t *testing.T) {
 	now := time.Date(2026, 4, 27, 10, 30, 0, 0, time.UTC)
-	got := BuildCycleContext("SYSTEM PROMPT", nil, nil, nil, "", now, 2000)
+	got := BuildCycleContext("SYSTEM PROMPT", "", "", nil, nil, nil, "", now, 2000)
 
 	if !strings.Contains(got, "SYSTEM PROMPT") {
 		t.Error("output missing system prompt")
@@ -37,7 +37,7 @@ func TestBuildCycleContext_WithMemories(t *testing.T) {
 		{Path: "alpha.md", Content: "alpha content"},
 		{Path: "beta.md", Content: "beta content"},
 	}
-	got := BuildCycleContext("SYS", mems, nil, nil, "", now, 2000)
+	got := BuildCycleContext("SYS", "", "", mems, nil, nil, "", now, 2000)
 
 	if !strings.Contains(got, "Recent Memories") {
 		t.Error("missing Recent Memories header")
@@ -56,7 +56,7 @@ func TestBuildCycleContext_WithMemories(t *testing.T) {
 func TestBuildCycleContext_TruncatesLongMemory(t *testing.T) {
 	long := strings.Repeat("x", 3000)
 	mems := []bm25.Result{{Path: "long.md", Content: long}}
-	got := BuildCycleContext("SYS", mems, nil, nil, "", time.Now(), 2000)
+	got := BuildCycleContext("SYS", "", "", mems, nil, nil, "", time.Now(), 2000)
 
 	if !strings.Contains(got, "[truncated") {
 		t.Error("expected truncation marker for long memory")
@@ -78,7 +78,7 @@ func TestBuildCycleContext_TruncatesLongMemory(t *testing.T) {
 func TestBuildCycleContext_NoLimitKeepsFullContent(t *testing.T) {
 	long := strings.Repeat("x", 3000)
 	mems := []bm25.Result{{Path: "long.md", Content: long}}
-	got := BuildCycleContext("SYS", mems, nil, nil, "", time.Now(), 0)
+	got := BuildCycleContext("SYS", "", "", mems, nil, nil, "", time.Now(), 0)
 
 	if strings.Contains(got, "[truncated") {
 		t.Error("did not expect truncation marker when limit is disabled")
@@ -90,13 +90,16 @@ func TestBuildCycleContext_NoLimitKeepsFullContent(t *testing.T) {
 
 func TestBuildCycleContext_WithSkills(t *testing.T) {
 	cat := []skills.Skill{
-		{Name: "pdf-processing", Description: "Handle PDFs."},
-		{Name: "data-analysis", Description: "Analyze datasets."},
+		{Name: "pdf-processing", Description: "Handle PDFs.", Source: skills.SourceUser},
+		{Name: "data-analysis", Description: "Analyze datasets.", Source: skills.SourceUser},
 	}
-	got := BuildCycleContext("SYS", nil, cat, nil, "", time.Now(), 2000)
+	got := BuildCycleContext("SYS", "", "", nil, cat, nil, "", time.Now(), 2000)
 
 	if !strings.Contains(got, "## Available Skills") {
 		t.Error("missing Available Skills header")
+	}
+	if !strings.Contains(got, "### User") {
+		t.Error("missing User subsection")
 	}
 	if !strings.Contains(got, "**pdf-processing**: Handle PDFs.") {
 		t.Errorf("missing pdf-processing entry; got %q", got)
@@ -109,10 +112,32 @@ func TestBuildCycleContext_WithSkills(t *testing.T) {
 	}
 }
 
+func TestBuildCycleContext_SkillsSystemAndUser(t *testing.T) {
+	cat := []skills.Skill{
+		{Name: "html-artifact", Description: "Publish pages.", Source: skills.SourceSystem},
+		{Name: "finances", Description: "Budget Q&A.", Source: skills.SourceUser},
+	}
+	got := BuildCycleContext("SYS", "", "", nil, cat, nil, "", time.Now(), 2000)
+	sysIdx := strings.Index(got, "### System")
+	userIdx := strings.Index(got, "### User")
+	if sysIdx < 0 || userIdx < 0 {
+		t.Fatalf("missing subsections: system=%d user=%d\n%s", sysIdx, userIdx, got)
+	}
+	if sysIdx > userIdx {
+		t.Error("System subsection should appear before User")
+	}
+	if !strings.Contains(got, "**html-artifact**: Publish pages.") {
+		t.Error("missing system skill entry")
+	}
+	if !strings.Contains(got, "**finances**: Budget Q&A.") {
+		t.Error("missing user skill entry")
+	}
+}
+
 func TestBuildCycleContext_SkillsAndMemoriesTogether(t *testing.T) {
 	cat := []skills.Skill{{Name: "x", Description: "x."}}
 	mems := []bm25.Result{{Path: "m.md", Content: "memory body"}}
-	got := BuildCycleContext("SYS", mems, cat, nil, "", time.Now(), 2000)
+	got := BuildCycleContext("SYS", "", "", mems, cat, nil, "", time.Now(), 2000)
 
 	skillsIdx := strings.Index(got, "## Available Skills")
 	memIdx := strings.Index(got, "## Recent Memories")
@@ -129,7 +154,7 @@ func TestBuildCycleContext_WithSubagents(t *testing.T) {
 		{Name: "fast", Purpose: "Quick lookups."},
 		{Name: "deep", Purpose: "Architecture analysis."},
 	}
-	got := BuildCycleContext("SYS", nil, nil, cat, "", time.Now(), 2000)
+	got := BuildCycleContext("SYS", "", "", nil, nil, cat, "", time.Now(), 2000)
 
 	if !strings.Contains(got, "## Available Subagent Profiles") {
 		t.Error("missing Subagent Profiles header")
@@ -149,7 +174,7 @@ func TestBuildCycleContext_SubagentsAfterSkills(t *testing.T) {
 	skl := []skills.Skill{{Name: "x", Description: "x."}}
 	sub := []subagent.Catalog{{Name: "fast", Purpose: "y"}}
 	mems := []bm25.Result{{Path: "m.md", Content: "memory body"}}
-	got := BuildCycleContext("SYS", mems, skl, sub, "", time.Now(), 2000)
+	got := BuildCycleContext("SYS", "", "", mems, skl, sub, "", time.Now(), 2000)
 
 	skillsIdx := strings.Index(got, "## Available Skills")
 	subIdx := strings.Index(got, "## Available Subagent Profiles")
@@ -164,7 +189,7 @@ func TestBuildCycleContext_SubagentsAfterSkills(t *testing.T) {
 
 func TestBuildCycleContext_WithCollaboratorGuide(t *testing.T) {
 	guide := "## Collaborator Channel\n\nYou are on Discord.\n"
-	got := BuildCycleContext("SYS", nil, nil, nil, guide, time.Now(), 2000)
+	got := BuildCycleContext("SYS", "", "", nil, nil, nil, guide, time.Now(), 2000)
 	if !strings.Contains(got, "You are on Discord.") {
 		t.Fatal("missing collaborator guide body")
 	}
@@ -176,8 +201,50 @@ func TestBuildCycleContext_WithCollaboratorGuide(t *testing.T) {
 }
 
 func TestBuildCycleContext_EmptyCollaboratorGuideOmitted(t *testing.T) {
-	got := BuildCycleContext("SYS", nil, nil, nil, "   ", time.Now(), 2000)
+	got := BuildCycleContext("SYS", "", "", nil, nil, nil, "   ", time.Now(), 2000)
 	if strings.Contains(got, "Collaborator Channel") {
 		t.Fatal("blank guide should not render a section")
 	}
 }
+
+func TestBuildCycleContext_IdentityAndOverlay(t *testing.T) {
+	got := BuildCycleContext(
+		"SYS",
+		"I am Arlo.",
+		"Prefer short replies.",
+		nil, nil, nil, "", time.Now(), 2000,
+	)
+	idIdx := strings.Index(got, "## Identity")
+	ovIdx := strings.Index(got, "## Agent Overlay")
+	if idIdx < 0 || ovIdx < 0 {
+		t.Fatalf("missing sections: identity=%d overlay=%d\n%s", idIdx, ovIdx, got)
+	}
+	if idIdx > ovIdx {
+		t.Error("Identity should appear before Agent Overlay")
+	}
+	if !strings.Contains(got, "I am Arlo.") {
+		t.Error("missing identity body")
+	}
+	if !strings.Contains(got, "Prefer short replies.") {
+		t.Error("missing overlay body")
+	}
+}
+
+func TestBuildCycleContext_BlankIdentityOmitted(t *testing.T) {
+	got := BuildCycleContext("SYS", "  ", "", nil, nil, nil, "", time.Now(), 2000)
+	if strings.Contains(got, "## Identity") {
+		t.Fatal("blank identity should not render")
+	}
+}
+
+func TestBuildCycleContext_IdentityNeverTruncated(t *testing.T) {
+	long := strings.TrimSpace(strings.Repeat("I am Arlo. ", 2000)) // well over typical memory char limit
+	got := BuildCycleContext("SYS", long, "", nil, nil, nil, "", time.Now(), 100)
+	if strings.Contains(got, "truncated") && strings.Contains(got, "identity/core.md") {
+		t.Fatal("identity must not be silently truncated")
+	}
+	if !strings.Contains(got, long) {
+		t.Fatal("full identity body should appear in system message")
+	}
+}
+
