@@ -44,6 +44,24 @@ func collaboratorSendSucceeded(name, result string) bool {
 	return true
 }
 
+// isToolErrorResult reports whether a tool execution result represents a failure.
+// Checks standard error prefixes produced by the tools and adapters layers.
+func isToolErrorResult(result string) bool {
+	trimmed := strings.TrimSpace(result)
+	switch {
+	case strings.HasPrefix(trimmed, "Error:"),
+		strings.HasPrefix(trimmed, "ERROR:"),
+		strings.HasPrefix(trimmed, "error:"),
+		strings.HasPrefix(trimmed, "Failed:"),
+		strings.HasPrefix(trimmed, "failed:"),
+		strings.HasPrefix(trimmed, "Error parsing arguments:"),
+		strings.HasPrefix(trimmed, "Tool"):
+		return true
+	default:
+		return false
+	}
+}
+
 // executeToolCalls runs each tool call. While collaboratorReplyOwed is set,
 // sleep is rejected so the model cannot nap before delivering a reply;
 // other tools (research, skills, MCP) remain allowed. An early
@@ -52,8 +70,13 @@ func collaboratorSendSucceeded(name, result string) bool {
 // the caller does not track it (e.g. compaction). scrubbed lists tool_call
 // IDs whose Arguments were rewritten from invalid JSON; those get a
 // synthetic error result instead of a real dispatch.
-func (a *Agent) executeToolCalls(ctx context.Context, messages []llm.Message, toolCalls []llm.ToolCall, debt *bool, scrubbed map[string]bool) []llm.Message {
+//
+// Returns the updated message log, whether all executed tool calls failed,
+// and the error text of the last failure (if any).
+func (a *Agent) executeToolCalls(ctx context.Context, messages []llm.Message, toolCalls []llm.ToolCall, debt *bool, scrubbed map[string]bool) ([]llm.Message, bool, string) {
 	a.tools.SetContextInfo(a.countMessageTokens(messages))
+	failedCount := 0
+	lastErr := ""
 	for _, tc := range toolCalls {
 		name := ""
 		if tc.Function.Name != "" {
@@ -75,8 +98,13 @@ func (a *Agent) executeToolCalls(ctx context.Context, messages []llm.Message, to
 			*debt = false
 			a.logger.Info("collaborator delivery debt cleared", "tool", name)
 		}
+		if isToolErrorResult(result) {
+			failedCount++
+			lastErr = result
+		}
 		messages = append(messages, toolMessage(tc.ID, result))
 		a.recordToolCall()
 	}
-	return messages
+	allFailed := len(toolCalls) > 0 && failedCount == len(toolCalls)
+	return messages, allFailed, lastErr
 }

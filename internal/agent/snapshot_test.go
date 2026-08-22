@@ -112,7 +112,7 @@ func TestSnapshot_RecordChatError(t *testing.T) {
 
 func TestSnapshot_RecordIterationTop(t *testing.T) {
 	a := newTestAgent()
-	a.recordIterationTop(15, 12345, 3, 2, 1)
+	a.recordIterationTop(15, 12345, 3, 2, 2, 1)
 
 	got := a.Snapshot()
 	if got.MessageCount != 15 {
@@ -123,6 +123,9 @@ func TestSnapshot_RecordIterationTop(t *testing.T) {
 	}
 	if got.IdleStreak != 3 {
 		t.Fatalf("IdleStreak = %d", got.IdleStreak)
+	}
+	if got.ToolErrorStreak != 2 {
+		t.Fatalf("ToolErrorStreak = %d", got.ToolErrorStreak)
 	}
 	if got.ActiveSubagents != 1 {
 		t.Fatalf("ActiveSubagents = %d", got.ActiveSubagents)
@@ -143,7 +146,7 @@ func TestSnapshot_Concurrent(t *testing.T) {
 			for j := 0; j < 100; j++ {
 				a.recordChat(time.Millisecond, 10, 5, "stop", nil)
 				a.recordToolCall()
-				a.recordIterationTop(j, j*100, 0, 0, 0)
+				a.recordIterationTop(j, j*100, 0, 0, 0, 0)
 				a.setPhase(PhaseExecutingTool)
 			}
 		}()

@@ -3485,6 +3485,15 @@ func (te *Executor) memoryInsert(argsJSON string) string {
 // Sandbox tool handlers
 // ---------------------------------------------------------------------------
 
+// splitSandboxPath handles models passing combined paths like folder="html/page.html" with empty filename.
+func splitSandboxPath(folder, filename string) (string, string) {
+	if filename == "" && strings.Contains(folder, "/") {
+		parts := strings.SplitN(folder, "/", 2)
+		return parts[0], parts[1]
+	}
+	return folder, filename
+}
+
 func (te *Executor) sandboxWrite(argsJSON string) string {
 	var args struct {
 		Folder   string `json:"folder"`
@@ -3492,10 +3501,14 @@ func (te *Executor) sandboxWrite(argsJSON string) string {
 		Content  string `json:"content"`
 	}
 	if err := json.Unmarshal([]byte(argsJSON), &args); err != nil {
-		return fmt.Sprintf("Error parsing arguments: %s", err)
+		return fmt.Sprintf("Error parsing arguments for sandbox_write: %s. Expected JSON object with 'folder', 'filename', and 'content'.", err)
 	}
 	if te.sandbox == nil {
 		return "Error: sandbox is not enabled"
+	}
+	args.Folder, args.Filename = splitSandboxPath(args.Folder, args.Filename)
+	if args.Folder == "" || args.Filename == "" {
+		return fmt.Sprintf("Error: sandbox_write requires 'folder' (one of: scripts, input, output, html), 'filename' (e.g. \"page.html\"), and 'content'. Received folder=%q, filename=%q.", args.Folder, args.Filename)
 	}
 	if err := te.sandbox.WriteFile(args.Folder, args.Filename, args.Content); err != nil {
 		return fmt.Sprintf("Error: %s", err)
@@ -3511,10 +3524,14 @@ func (te *Executor) sandboxRead(argsJSON string) string {
 		Lines    int    `json:"lines"`
 	}
 	if err := json.Unmarshal([]byte(argsJSON), &args); err != nil {
-		return fmt.Sprintf("Error parsing arguments: %s", err)
+		return fmt.Sprintf("Error parsing arguments for sandbox_read: %s. Expected JSON object with 'folder' and 'filename'.", err)
 	}
 	if te.sandbox == nil {
 		return "Error: sandbox is not enabled"
+	}
+	args.Folder, args.Filename = splitSandboxPath(args.Folder, args.Filename)
+	if args.Folder == "" || args.Filename == "" {
+		return fmt.Sprintf("Error: sandbox_read requires 'folder' (one of: scripts, input, output, html) and 'filename'. Received folder=%q, filename=%q.", args.Folder, args.Filename)
 	}
 	content, err := te.sandbox.ReadFile(args.Folder, args.Filename, args.Offset, args.Lines)
 	if err != nil {
@@ -3529,10 +3546,14 @@ func (te *Executor) sandboxDelete(argsJSON string) string {
 		Filename string `json:"filename"`
 	}
 	if err := json.Unmarshal([]byte(argsJSON), &args); err != nil {
-		return fmt.Sprintf("Error parsing arguments: %s", err)
+		return fmt.Sprintf("Error parsing arguments for sandbox_delete: %s.", err)
 	}
 	if te.sandbox == nil {
 		return "Error: sandbox is not enabled"
+	}
+	args.Folder, args.Filename = splitSandboxPath(args.Folder, args.Filename)
+	if args.Folder == "" || args.Filename == "" {
+		return fmt.Sprintf("Error: sandbox_delete requires 'folder' and 'filename'. Received folder=%q, filename=%q.", args.Folder, args.Filename)
 	}
 	if err := te.sandbox.DeleteFile(args.Folder, args.Filename); err != nil {
 		return fmt.Sprintf("Error: %s", err)
@@ -3547,10 +3568,13 @@ func (te *Executor) sandboxRename(argsJSON string) string {
 		NewName string `json:"new_name"`
 	}
 	if err := json.Unmarshal([]byte(argsJSON), &args); err != nil {
-		return fmt.Sprintf("Error parsing arguments: %s", err)
+		return fmt.Sprintf("Error parsing arguments for sandbox_rename: %s.", err)
 	}
 	if te.sandbox == nil {
 		return "Error: sandbox is not enabled"
+	}
+	if args.Folder == "" || args.OldName == "" || args.NewName == "" {
+		return fmt.Sprintf("Error: sandbox_rename requires 'folder', 'old_name', and 'new_name'. Received folder=%q, old_name=%q, new_name=%q.", args.Folder, args.OldName, args.NewName)
 	}
 	if err := te.sandbox.RenameFile(args.Folder, args.OldName, args.NewName); err != nil {
 		return fmt.Sprintf("Error: %s", err)
@@ -3563,10 +3587,13 @@ func (te *Executor) sandboxList(argsJSON string) string {
 		Folder string `json:"folder"`
 	}
 	if err := json.Unmarshal([]byte(argsJSON), &args); err != nil {
-		return fmt.Sprintf("Error parsing arguments: %s", err)
+		return fmt.Sprintf("Error parsing arguments for sandbox_list: %s.", err)
 	}
 	if te.sandbox == nil {
 		return "Error: sandbox is not enabled"
+	}
+	if args.Folder == "" {
+		return "Error: sandbox_list requires parameter 'folder' (one of: 'scripts', 'input', 'output', 'html')"
 	}
 	files, err := te.sandbox.ListFiles(args.Folder)
 	if err != nil {
@@ -3592,10 +3619,14 @@ func (te *Executor) sandboxEdit(argsJSON string) string {
 		ReplaceAll bool   `json:"replace_all"`
 	}
 	if err := json.Unmarshal([]byte(argsJSON), &args); err != nil {
-		return fmt.Sprintf("Error parsing arguments: %s", err)
+		return fmt.Sprintf("Error parsing arguments for sandbox_edit: %s.", err)
 	}
 	if te.sandbox == nil {
 		return "Error: sandbox is not enabled"
+	}
+	args.Folder, args.Filename = splitSandboxPath(args.Folder, args.Filename)
+	if args.Folder == "" || args.Filename == "" {
+		return fmt.Sprintf("Error: sandbox_edit requires 'folder', 'filename', 'old_string', and 'new_string'. Received folder=%q, filename=%q.", args.Folder, args.Filename)
 	}
 	if args.OldString == "" {
 		return "Error: old_string is required"
@@ -3617,10 +3648,14 @@ func (te *Executor) sandboxAppend(argsJSON string) string {
 		Content  string `json:"content"`
 	}
 	if err := json.Unmarshal([]byte(argsJSON), &args); err != nil {
-		return fmt.Sprintf("Error parsing arguments: %s", err)
+		return fmt.Sprintf("Error parsing arguments for sandbox_append: %s.", err)
 	}
 	if te.sandbox == nil {
 		return "Error: sandbox is not enabled"
+	}
+	args.Folder, args.Filename = splitSandboxPath(args.Folder, args.Filename)
+	if args.Folder == "" || args.Filename == "" {
+		return fmt.Sprintf("Error: sandbox_append requires 'folder', 'filename', and 'content'. Received folder=%q, filename=%q.", args.Folder, args.Filename)
 	}
 	if args.Content == "" {
 		return "Error: content is required"
@@ -3639,10 +3674,14 @@ func (te *Executor) sandboxInsert(argsJSON string) string {
 		Content  string `json:"content"`
 	}
 	if err := json.Unmarshal([]byte(argsJSON), &args); err != nil {
-		return fmt.Sprintf("Error parsing arguments: %s", err)
+		return fmt.Sprintf("Error parsing arguments for sandbox_insert: %s.", err)
 	}
 	if te.sandbox == nil {
 		return "Error: sandbox is not enabled"
+	}
+	args.Folder, args.Filename = splitSandboxPath(args.Folder, args.Filename)
+	if args.Folder == "" || args.Filename == "" {
+		return fmt.Sprintf("Error: sandbox_insert requires 'folder', 'filename', 'line', and 'content'. Received folder=%q, filename=%q.", args.Folder, args.Filename)
 	}
 	if args.Line < 1 {
 		return "Error: line must be >= 1"

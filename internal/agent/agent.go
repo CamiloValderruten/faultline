@@ -211,6 +211,16 @@ const (
 	// rebuild from memories is cheaper than continuing to feed it nudges.
 	idleForceCompactionThreshold = 8
 
+	// toolErrorNudgeThreshold is the number of consecutive turns with failed
+	// tool calls after which we inject a directive schema-verification nudge.
+	toolErrorNudgeThreshold = 3
+
+	// toolErrorForceCompactionThreshold is the number of consecutive turns
+	// with failed tool calls after which we force context compaction. This
+	// breaks in-context error attractor loops where the model repeatedly copies
+	// malformed tool argument structures from recent failed turns.
+	toolErrorForceCompactionThreshold = 6
+
 	// rateLimitBackoff is how long Run sleeps after an LLM HTTP 429 /
 	// quota error before retrying. Long enough to avoid hammering a
 	// depleted plan; short enough that Discord/admin stay responsive.
@@ -222,6 +232,21 @@ const (
 // It is more directive than continue.md on purpose: at this point the
 // model has demonstrated it is not going to act on a gentle reminder.
 const idleNudgePrompt = "[Time: %s]\n\nYou have produced %d text-only responses in a row with no tool calls and no new input from your collaborator. This is a stuck loop. Break out of it now: call a tool. Good options are `context_status` (to see your token usage), `memory_list` with directory `\"\"` (to remember what you have), or `memory_write` to save whatever you were thinking about. Do not reply with another text-only message — that will only deepen the loop."
+
+// toolErrorNudgePrompt is injected when the model is stuck in a consecutive
+// tool error loop. It instructs the model to inspect the schema definition
+// and avoid repeating malformed parameter patterns.
+const toolErrorNudgePrompt = "[Time: %s]\n\nYou have experienced %d consecutive turns with failed tool calls (most recent error: %s). You may be caught in a parameter formatting loop or repeating malformed tool arguments from earlier context. Check the tool definition and required parameters carefully, or take an alternative approach. Do not repeat the same malformed arguments."
+
+// summarizeError truncates an error string to at most maxLen runes.
+func summarizeError(s string, maxLen int) string {
+	s = strings.TrimSpace(s)
+	runes := []rune(s)
+	if len(runes) <= maxLen {
+		return s
+	}
+	return string(runes[:maxLen]) + "…"
+}
 
 // isRateLimited reports whether err looks like an LLM provider rate limit
 // or quota exhaustion (HTTP 429). Matches the openai adapter's
@@ -433,6 +458,8 @@ func (a *Agent) Run(ctx context.Context, shutdownCh <-chan struct{}) error {
 	// iteration); we exit when MaxTurns is set and the cap is hit.
 	// Zero MaxTurns (the primary case) disables the check.
 	turn := 0
+	toolErrorStreak := 0
+	lastToolError := ""
 
 	// collaboratorReplyOwed is set when a drained batch of human
 	// collaborator messages is injected, and cleared only after a
@@ -499,7 +526,7 @@ func (a *Agent) Run(ctx context.Context, shutdownCh <-chan struct{}) error {
 		if a.subagents != nil {
 			activeSubagents = a.subagents.ActiveCount()
 		}
-		a.recordIterationTop(len(messages), tokenEst, idleStreak, 0, activeSubagents)
+		a.recordIterationTop(len(messages), tokenEst, idleStreak, toolErrorStreak, 0, activeSubagents)
 		if tokenEst > a.cfg.Agent.CompactionThreshold {
 			a.logger.Warn("context at compaction threshold, compacting",
 				"tokens_est", tokenEst, "threshold", a.cfg.Agent.CompactionThreshold)
@@ -511,6 +538,9 @@ func (a *Agent) Run(ctx context.Context, shutdownCh <-chan struct{}) error {
 			}
 			a.setPhase(PhaseIdle)
 			idleStreak = 0
+			toolErrorStreak = 0
+			lastToolError = ""
+			a.recordToolErrorStreak(0)
 			continue
 		}
 
@@ -526,6 +556,9 @@ func (a *Agent) Run(ctx context.Context, shutdownCh <-chan struct{}) error {
 			}
 			a.setPhase(PhaseIdle)
 			idleStreak = 0
+			toolErrorStreak = 0
+			lastToolError = ""
+			a.recordToolErrorStreak(0)
 			continue
 		}
 
@@ -544,6 +577,30 @@ func (a *Agent) Run(ctx context.Context, shutdownCh <-chan struct{}) error {
 			}
 			a.setPhase(PhaseIdle)
 			idleStreak = 0
+			toolErrorStreak = 0
+			lastToolError = ""
+			a.recordToolErrorStreak(0)
+			continue
+		}
+
+		// Tool-error loop escape hatch. When tool calls fail repeatedly (e.g.
+		// omitting a required parameter in a loop), in-context examples condition
+		// the model to repeat the mistake. Force compaction to rebuild from clean
+		// system prompts and disk memory.
+		if toolErrorStreak >= toolErrorForceCompactionThreshold {
+			a.logger.Warn("tool error loop detected, forcing compaction",
+				"tool_error_streak", toolErrorStreak, "tokens_est", tokenEst, "last_error", lastToolError)
+			a.setPhase(PhaseCompacting)
+			messages, prompts, err = a.compactContext(ctx, toolCtx, messages, toolDefs, prompts)
+			if err != nil {
+				a.recordError(err)
+				return err
+			}
+			a.setPhase(PhaseIdle)
+			idleStreak = 0
+			toolErrorStreak = 0
+			lastToolError = ""
+			a.recordToolErrorStreak(0)
 			continue
 		}
 
@@ -715,9 +772,30 @@ func (a *Agent) Run(ctx context.Context, shutdownCh <-chan struct{}) error {
 			// yield to a pending shutdown without waiting for ctx
 			// cancellation (which only happens on the second SIGINT).
 			a.setPhase(PhaseExecutingTool)
-			messages = a.executeToolCalls(toolCtx, messages, msg.ToolCalls, &collaboratorReplyOwed, scrubbed)
+			var allFailed bool
+			var lastErr string
+			messages, allFailed, lastErr = a.executeToolCalls(toolCtx, messages, msg.ToolCalls, &collaboratorReplyOwed, scrubbed)
 			a.setPhase(PhaseIdle)
 			idleStreak = 0
+			if allFailed {
+				toolErrorStreak++
+				lastToolError = lastErr
+				a.recordToolErrorStreak(toolErrorStreak)
+				a.logger.Warn("tool execution error streak",
+					"streak", toolErrorStreak,
+					"last_error", summarizeError(lastErr, 120),
+				)
+				if toolErrorStreak >= toolErrorNudgeThreshold && toolErrorStreak < toolErrorForceCompactionThreshold {
+					messages = append(messages, llm.Message{
+						Role:    llm.RoleUser,
+						Content: fmt.Sprintf(toolErrorNudgePrompt, time.Now().Format(time.RFC1123), toolErrorStreak, summarizeError(lastErr, 200)),
+					})
+				}
+			} else {
+				toolErrorStreak = 0
+				lastToolError = ""
+				a.recordToolErrorStreak(0)
+			}
 
 		case hasPending:
 			// Text-only response with an interrupt waiting: surface it in
@@ -959,7 +1037,7 @@ func (a *Agent) compactContext(ctx context.Context, toolCtx context.Context, mes
 			// Compaction does not track collaborator delivery debt; a
 			// successful send here still clears nothing because debt is
 			// owned by Run. Passing nil keeps sleep available during save.
-			messages = a.executeToolCalls(toolCtx, messages, msg.ToolCalls, nil, scrubbed)
+			messages, _, _ = a.executeToolCalls(toolCtx, messages, msg.ToolCalls, nil, scrubbed)
 		} else {
 			// Text-only response - agent is done saving state
 			break
@@ -1390,7 +1468,7 @@ func (a *Agent) gracefulSave(ctx context.Context, messages []llm.Message, toolDe
 		a.logBackendPerf()
 
 		if len(msg.ToolCalls) > 0 {
-			messages = a.executeToolCalls(saveCtx, messages, msg.ToolCalls, nil, scrubbed)
+			messages, _, _ = a.executeToolCalls(saveCtx, messages, msg.ToolCalls, nil, scrubbed)
 		} else {
 			// No tool calls - agent is done saving
 			a.logger.Info("agent finished saving state (no more tool calls)")

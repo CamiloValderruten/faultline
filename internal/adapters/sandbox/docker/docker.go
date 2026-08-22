@@ -244,8 +244,11 @@ source = { virtual = "." }
 
 // validateFolder checks that the folder name is valid.
 func (s *Sandbox) validateFolder(folder string) error {
+	if folder == "" {
+		return fmt.Errorf("folder is required: must be one of 'scripts', 'input', 'output', 'html'")
+	}
 	if !sandboxFolders[folder] {
-		return fmt.Errorf("invalid folder %q: must be one of scripts, input, output, html", folder)
+		return fmt.Errorf("invalid folder %q: must be one of 'scripts', 'input', 'output', 'html'", folder)
 	}
 	return nil
 }
@@ -262,13 +265,13 @@ func (s *Sandbox) folderDir(folder string) string {
 // validateFilename checks that a filename is flat, lowercase, and safe.
 func (s *Sandbox) validateFilename(name string) error {
 	if name == "" {
-		return fmt.Errorf("filename is required")
+		return fmt.Errorf("filename is required (e.g. \"analyze_data.py\", \"page.html\")")
 	}
 	if strings.Contains(name, "/") || strings.Contains(name, "\\") {
-		return fmt.Errorf("filename must not contain path separators (flat files only)")
+		return fmt.Errorf("filename %q must not contain path separators (flat files only)", name)
 	}
 	if strings.Contains(name, "..") {
-		return fmt.Errorf("filename must not contain '..'")
+		return fmt.Errorf("filename %q must not contain '..'", name)
 	}
 	if !filenamePattern.MatchString(name) {
 		return fmt.Errorf("filename %q is invalid: must be lowercase, starting with alphanumeric, containing only [a-z0-9._-]", name)
