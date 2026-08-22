@@ -87,6 +87,10 @@ type AgentSnapshot struct {
 	// compaction logic.
 	IdleStreak int
 
+	// ToolErrorStreak is the count of consecutive turns with failed
+	// tool calls. Drives the tool error nudge / forced compaction logic.
+	ToolErrorStreak int
+
 	// TotalChats is the cumulative count of LLM /chat/completions
 	// requests this process has issued (across all turns).
 	TotalChats int64
@@ -166,6 +170,8 @@ type inspectorState struct {
 	lastError   string
 	lastErrorAt time.Time
 
+	toolErrorStreak int
+
 	pendingOperator int
 	activeSubagents int
 }
@@ -200,6 +206,7 @@ func (a *Agent) Snapshot() AgentSnapshot {
 		MaxTokens:                a.cfg.Agent.MaxTokens,
 		CompactionThreshold:      a.cfg.Agent.CompactionThreshold,
 		IdleStreak:               s.idleStreak,
+		ToolErrorStreak:          s.toolErrorStreak,
 		TotalChats:               s.totalChats,
 		TotalPromptTokens:        s.totalPromptTokens,
 		TotalCompletionTokens:    s.totalCompletionTokens,
@@ -260,7 +267,7 @@ func (a *Agent) recordChat(latency time.Duration, promptTokens, completionTokens
 
 // recordIterationTop is called at the top of each loop iteration with
 // the per-iteration observable state.
-func (a *Agent) recordIterationTop(messageCount, tokenEstimate, idleStreak, pendingOperator, activeSubagents int) {
+func (a *Agent) recordIterationTop(messageCount, tokenEstimate, idleStreak, toolErrorStreak, pendingOperator, activeSubagents int) {
 	if a.inspector == nil {
 		return
 	}
@@ -268,8 +275,19 @@ func (a *Agent) recordIterationTop(messageCount, tokenEstimate, idleStreak, pend
 	a.inspector.messageCount = messageCount
 	a.inspector.tokenEstimate = tokenEstimate
 	a.inspector.idleStreak = idleStreak
+	a.inspector.toolErrorStreak = toolErrorStreak
 	a.inspector.pendingOperator = pendingOperator
 	a.inspector.activeSubagents = activeSubagents
+	a.inspector.mu.Unlock()
+}
+
+// recordToolErrorStreak records changes to the tool error streak in real-time.
+func (a *Agent) recordToolErrorStreak(streak int) {
+	if a.inspector == nil {
+		return
+	}
+	a.inspector.mu.Lock()
+	a.inspector.toolErrorStreak = streak
 	a.inspector.mu.Unlock()
 }
 

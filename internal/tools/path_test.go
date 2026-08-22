@@ -53,3 +53,25 @@ func TestValidateMemoryPath_RejectsOtherPunctuation(t *testing.T) {
 		t.Error("special chars should be rejected")
 	}
 }
+
+func TestSplitSandboxPath(t *testing.T) {
+	cases := []struct {
+		folder, filename string
+		wantFolder       string
+		wantFilename     string
+	}{
+		{"html/page.html", "", "html", "page.html"},
+		{"scripts/run.py", "", "scripts", "run.py"},
+		{"output/data.json", "", "output", "data.json"},
+		{"html", "page.html", "html", "page.html"},
+		{"scripts", "run.py", "scripts", "run.py"},
+		{"", "page.html", "", "page.html"},
+	}
+	for _, tc := range cases {
+		f, fn := splitSandboxPath(tc.folder, tc.filename)
+		if f != tc.wantFolder || fn != tc.wantFilename {
+			t.Errorf("splitSandboxPath(%q, %q) = (%q, %q), want (%q, %q)",
+				tc.folder, tc.filename, f, fn, tc.wantFolder, tc.wantFilename)
+		}
+	}
+}

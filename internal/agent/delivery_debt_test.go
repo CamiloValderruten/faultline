@@ -277,3 +277,97 @@ func (t *recordingTools) Execute(_ context.Context, call llm.ToolCall) string {
 
 func (t *recordingTools) SetContextInfo(int) {}
 func (t *recordingTools) Close()             {}
+
+func TestIsToolErrorResult(t *testing.T) {
+	cases := []struct {
+		result string
+		want   bool
+	}{
+		{"Error: filename is required", true},
+		{"ERROR: something went wrong", true},
+		{"error: lower case error", true},
+		{"Failed: container exited 1", true},
+		{"failed: unmarshal failed", true},
+		{"Error parsing arguments: invalid json", true},
+		{"Tool 'foo' is not available", true},
+		{"Successfully wrote 100 bytes to html/page.html", false},
+		{"Appended 50 bytes.", false},
+		{"[Sun, 23 Aug 2026 10:00:00 EDT]\nMessage sent.", false},
+		{"", false},
+	}
+	for _, tc := range cases {
+		got := isToolErrorResult(tc.result)
+		if got != tc.want {
+			t.Fatalf("isToolErrorResult(%q) = %v, want %v", tc.result, got, tc.want)
+		}
+	}
+}
+
+func TestToolErrorStreak_NudgeAtThree(t *testing.T) {
+	// 3 consecutive failed tool calls -> model receives nudge prompt on 4th chat call
+	chat := &scriptedChat{responses: []*llm.ChatResponse{
+		toolCallResponse("sandbox_write", `{"folder":"html"}`), // error 1
+		toolCallResponse("sandbox_write", `{"folder":"html"}`), // error 2
+		toolCallResponse("sandbox_write", `{"folder":"html"}`), // error 3 -> triggers nudge
+		toolCallResponse("send_message", `{"text":"Fixed!"}`),  // succeeds -> clears streak
+	}}
+	tools := &recordingTools{results: map[string]string{
+		"sandbox_write": "Error: filename is required",
+		"send_message":   "Message sent to collaborator.",
+	}}
+	agent := newDeliveryDebtAgent(chat, tools, nil, 4)
+
+	if err := agent.Run(context.Background(), make(chan struct{})); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	var sawNudge bool
+	for _, m := range chat.seen {
+		if m.Role == llm.RoleUser && strings.Contains(m.Content, "consecutive turns with failed tool calls") {
+			sawNudge = true
+			if !strings.Contains(m.Content, "3 consecutive turns") {
+				t.Fatalf("nudge should state 3 turns, got: %s", m.Content)
+			}
+		}
+	}
+	if !sawNudge {
+		t.Fatal("expected tool error nudge in conversation after 3 consecutive failures")
+	}
+
+	snap := agent.Snapshot()
+	if snap.ToolErrorStreak != 0 {
+		t.Fatalf("ToolErrorStreak after successful send = %d, want 0", snap.ToolErrorStreak)
+	}
+}
+
+func TestToolErrorStreak_ForcedCompactionAtSix(t *testing.T) {
+	// 6 consecutive failed tool calls -> triggers forced compaction
+	responses := make([]*llm.ChatResponse, 0, 8)
+	for i := 0; i < 6; i++ {
+		responses = append(responses, toolCallResponse("sandbox_write", `{"folder":"html"}`))
+	}
+	// Post-compaction summary response and recovery response
+	responses = append(responses, textOnlyResponse("Summary of broken loop"))
+	responses = append(responses, textOnlyResponse("Done after compaction"))
+
+	chat := &scriptedChat{responses: responses}
+	tools := &recordingTools{results: map[string]string{
+		"sandbox_write": "Error: filename is required",
+	}}
+	agent := newDeliveryDebtAgent(chat, tools, nil, 7)
+	agent.cfg.Agent.CompactionThreshold = 999999 // Ensure token threshold alone does not trigger compaction
+
+	if err := agent.Run(context.Background(), make(chan struct{})); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	var sawCompactedHeader bool
+	for _, m := range chat.seen {
+		if m.Role == llm.RoleUser && strings.Contains(m.Content, "[Context Compacted") {
+			sawCompactedHeader = true
+		}
+	}
+	if !sawCompactedHeader {
+		t.Fatal("expected forced context compaction header after 6 consecutive tool errors")
+	}
+}
